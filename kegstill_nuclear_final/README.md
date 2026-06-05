@@ -14,6 +14,8 @@ kegstill_nuclear_final/
 ├── storage.h / storage.cpp      NVS persistence (Preferences)
 ├── ble_scanner.h / .cpp         CQ60 manufacturer-data parser, NimBLE scan
 ├── control.h / .cpp             4-stage state machine + slow-PWM SSR
+├── valve.h / .cpp               motorized ball valve (PLACEHOLDER driver)
+├── history.h / .cpp             per-run history on LittleFS
 ├── web_handlers.h / .cpp        HTTP routes
 └── index_html.h                 web UI as PROGMEM raw string
 ```
@@ -25,7 +27,7 @@ board (WROOM-DA works), and Upload.
 
 - **NimBLE-Arduino** (v2.x)  — `h2zero/NimBLE-Arduino`
 - **ArduinoJson** (v6.x)     — keep on v6, the code uses `StaticJsonDocument`/`createNestedObject`
-- **Preferences** (built-in with ESP32 core)
+- **Preferences**, **LittleFS** (built-in with ESP32 core 2.x+)
 - **WebServer**, **WiFi**, **ArduinoOTA** (built-in)
 
 ## Why the split
@@ -66,6 +68,18 @@ for prototypes and ignores raw-string boundaries. Moving the HTML into a plain `
 - **WiFi config tab**: change SSID/pass from the UI; device reboots.
 - **Delete profile**, profile editor with all stage parameters.
 - **CSV export** now includes °C, °F, stage, and proper Content-Disposition.
+- **Motorized ball valve (PLACEHOLDER)**: dashboard slider + auto-follow-stage toggle.
+  Each profile carries per-stage valve setpoints (Heatup/Heads/Hearts/Tails). Hardware
+  driver in `valve.cpp` is a stub — drop in your servo/stepper/DC-motor logic there.
+  Default pins: `VALVE_OPEN_PIN=18`, `VALVE_CLOSE_PIN=19`, `VALVE_FEEDBACK_PIN=34`.
+- **Per-run history on LittleFS**: every completed run is auto-saved to
+  `/runs/run_NNNN.json`. New HISTORY tab lists all runs, plots a past run's temp/power/valve
+  chart, downloads CSV, or deletes. Sequence number persists across reboots.
+- **Dilution calculator**: new DILUTE tab. Inputs final jar volume (mL/L/oz/qt/gal),
+  target ABV-or-proof, and source ABV (pulled from saved `washABV` or hand-entered
+  hydrometer reading). Outputs distillate + water amounts in the same unit, plus a
+  second unit for cross-check. Math is `V_target·ABV_target = V_source·ABV_source`
+  (volume-additive approximation; TTB Table 6 if you need NIST-grade precision).
 
 ## Default profiles
 
@@ -96,6 +110,11 @@ POST /api/batch          set batch info
 GET  /api/export         CSV of current session
 POST /api/wifi           {ssid,pass}  reboots
 POST /api/resume/dismiss
+POST /api/valve          {pos:0-100, auto:bool}  set valve position or auto-follow
+GET  /api/history        list of saved runs
+GET  /api/history/get?id=NN     full run JSON
+GET  /api/history/csv?id=NN     CSV download
+POST /api/history/delete {id}
 ```
 
 ## Safety notes

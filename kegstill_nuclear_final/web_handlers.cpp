@@ -4,6 +4,8 @@
 #include "state.h"
 #include "storage.h"
 #include "control.h"
+#include "valve.h"
+#include "history.h"
 #include "index_html.h"
 #include <ArduinoJson.h>
 
@@ -28,6 +30,8 @@ static void handleStatus() {
   doc["automation"] = automationEnabled;
   doc["estop"]      = estopActive;
   doc["bleOk"]      = bleTempValid;
+  doc["valvePos"]   = currentValvePos;
+  doc["valveAuto"]  = valveAutoFollowStage;
   doc["resumePending"] = resumePending;
   doc["resumeElapsed"] = (uint32_t)resumeElapsedSec;
 
@@ -90,6 +94,10 @@ static void serializeProfile(JsonObject o, const Profile& p) {
   o["headsDuration_s"] = p.headsDuration_s;
   o["tailsTemp"]       = p.tailsTemp;
   o["tailsPower"]      = p.tailsPower;
+  o["valveHeatup"]     = p.valveHeatup;
+  o["valveHeads"]      = p.valveHeads;
+  o["valveHearts"]     = p.valveHearts;
+  o["valveTails"]      = p.valveTails;
 }
 
 static void handleProfiles() {
@@ -127,6 +135,10 @@ static void handleNewProfile() {
   p.headsDuration_s = doc["headsDuration_s"] | 900;
   p.tailsTemp       = doc["tailsTemp"]       | (p.targetTemp + 4.0f);
   p.tailsPower      = doc["tailsPower"]      | 35.0f;
+  p.valveHeatup     = doc["valveHeatup"]     | 100;
+  p.valveHeads      = doc["valveHeads"]      | 30;
+  p.valveHearts     = doc["valveHearts"]     | 80;
+  p.valveTails      = doc["valveTails"]      | 50;
   profiles.push_back(p);
   storage::saveProfiles();
   S->send(200);
@@ -203,6 +215,58 @@ static void handleDismissResume() {
   S->send(200);
 }
 
+// ---------- valve ----------
+static void handleValve() {
+  if (!S->hasArg("plain")) { S->send(400); return; }
+  StaticJsonDocument<128> doc;
+  if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
+  if (doc.containsKey("auto")) {
+    valveAutoFollowStage = doc["auto"].as<bool>();
+    if (valveAutoFollowStage) control::reapplyStageValve();
+  }
+  if (doc.containsKey("pos")) {
+    int pos = doc["pos"] | 0;
+    if (pos < 0) pos = 0; if (pos > 100) pos = 100;
+    // manual override: turn off auto-follow if user explicitly sets position
+    valveAutoFollowStage = false;
+    valve::setPosition((uint8_t)pos);
+  }
+  S->send(200);
+}
+
+// ---------- history ----------
+static void handleHistoryList() {
+  S->send(200, "application/json", history::listJson());
+}
+
+static void handleHistoryGet() {
+  if (!S->hasArg("id")) { S->send(400); return; }
+  uint16_t id = (uint16_t)S->arg("id").toInt();
+  String data = history::getRunJson(id);
+  if (data.length() == 0) { S->send(404); return; }
+  S->send(200, "application/json", data);
+}
+
+static void handleHistoryCsv() {
+  if (!S->hasArg("id")) { S->send(400); return; }
+  uint16_t id = (uint16_t)S->arg("id").toInt();
+  String csv = history::getRunCsv(id);
+  if (csv.length() == 0) { S->send(404); return; }
+  char fn[48];
+  snprintf(fn, sizeof(fn), "attachment; filename=kegstill_run_%u.csv", id);
+  S->sendHeader("Content-Disposition", fn);
+  S->send(200, "text/csv", csv);
+}
+
+static void handleHistoryDelete() {
+  if (!S->hasArg("plain")) { S->send(400); return; }
+  StaticJsonDocument<64> doc;
+  if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
+  uint16_t id = (uint16_t)(doc["id"] | 0);
+  bool ok = history::deleteRun(id);
+  S->send(ok ? 200 : 404);
+}
+
 void web_handlers::registerRoutes(WebServer& server) {
   S = &server;
   server.on("/",                  handleRoot);
@@ -222,4 +286,9 @@ void web_handlers::registerRoutes(WebServer& server) {
   server.on("/api/export",        HTTP_GET,  handleExport);
   server.on("/api/wifi",          HTTP_POST, handleWifi);
   server.on("/api/resume/dismiss",HTTP_POST, handleDismissResume);
+  server.on("/api/valve",         HTTP_POST, handleValve);
+  server.on("/api/history",       HTTP_GET,  handleHistoryList);
+  server.on("/api/history/get",   HTTP_GET,  handleHistoryGet);
+  server.on("/api/history/csv",   HTTP_GET,  handleHistoryCsv);
+  server.on("/api/history/delete",HTTP_POST, handleHistoryDelete);
 }

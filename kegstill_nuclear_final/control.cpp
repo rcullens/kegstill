@@ -3,11 +3,29 @@
 #include "config.h"
 #include "state.h"
 #include "storage.h"
+#include "history.h"
+#include "valve.h"
+
+static void applyStageValve(Stage s, const Profile& p) {
+  if (!valveAutoFollowStage) return;
+  uint8_t pos = currentValvePos;
+  switch (s) {
+    case STAGE_HEATUP:   pos = p.valveHeatup; break;
+    case STAGE_HEADS:    pos = p.valveHeads;  break;
+    case STAGE_HEARTS:   pos = p.valveHearts; break;
+    case STAGE_TAILS:    pos = p.valveTails;  break;
+    case STAGE_SHUTDOWN: pos = 0; break;
+    default: return;
+  }
+  valve::setPosition(pos);
+}
 
 static void enterStage(Stage s) {
   currentStage     = s;
   stageStartMillis = millis();
   Serial.printf("[CTRL] -> stage %s\n", stageName(s).c_str());
+  if (currentProfileIndex >= 0 && currentProfileIndex < (int)profiles.size())
+    applyStageValve(s, profiles[currentProfileIndex]);
 }
 
 void control::begin() {
@@ -47,11 +65,13 @@ bool control::startRun(bool resume) {
 }
 
 void control::stopRun() {
+  if (isRunning) history::saveCurrentRun();   // persist run before clearing
   isRunning = false;
   automationEnabled = false;
   currentPower = 0;
   targetPower = 0;
   digitalWrite(SSR_PIN, LOW);
+  valve::setPosition(0);
   enterStage(STAGE_IDLE);
   storage::clearRunSnapshot();
 }
@@ -104,6 +124,11 @@ void control::advanceStage() {
     default: return;
   }
   enterStage(next);
+}
+
+void control::reapplyStageValve() {
+  if (currentProfileIndex < 0 || currentProfileIndex >= (int)profiles.size()) return;
+  applyStageValve(currentStage, profiles[currentProfileIndex]);
 }
 
 // ---------- main loop ----------
@@ -175,6 +200,8 @@ void control::update() {
       }
       case STAGE_SHUTDOWN: {
         currentPower = 0.0f;
+        valve::setPosition(0);
+        history::saveCurrentRun();    // persist completed run
         isRunning    = false;
         digitalWrite(SSR_PIN, LOW);
         storage::clearRunSnapshot();

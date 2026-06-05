@@ -17,6 +17,8 @@
 #include "ble_scanner.h"
 #include "control.h"
 #include "web_handlers.h"
+#include "valve.h"
+#include "history.h"
 
 // ========== constant definitions (config.h externs) ==========
 const char* WIFI_SSID_DEFAULT = "Ponderosa";
@@ -33,6 +35,8 @@ int   currentProfileIndex = 0;
 float currentTempC        = 25.0f;
 float currentPower        = 0.0f;
 float targetPower         = 0.0f;
+uint8_t currentValvePos   = 0;
+bool  valveAutoFollowStage= true;
 bool  automationEnabled   = false;
 bool  isRunning           = false;
 bool  estopActive         = false;
@@ -82,15 +86,18 @@ float estimateABV(float tempC) {
 
 static void createDefaultProfiles() {
   profiles.clear();
-  // Stripping: drive hard, wide cut window
+  // Stripping: drive hard, wide cut window. Valve wide open through hearts.
   profiles.push_back({"Stripping Run", 180.0f, 100.0f, 6.0f, 200.0f,
-                      100.0f, 60.0f, 300,  185.0f, 80.0f});
-  // Hearts/spirit: gentler, tight cut
+                      100.0f, 60.0f, 300,  185.0f, 80.0f,
+                      100, 100, 100, 100});
+  // Hearts/spirit: gentler, tight cut. Valve throttled on heads/tails.
   profiles.push_back({"Spirit Run - Hearts", 172.0f, 65.0f, 4.5f, 195.0f,
-                      100.0f, 25.0f, 900,  178.0f, 35.0f});
-  // Vodka/neutral: lowest, tighter still
+                      100.0f, 25.0f, 900,  178.0f, 35.0f,
+                      100, 35, 80, 50});
+  // Vodka/neutral: lowest, tighter still.
   profiles.push_back({"Vodka / Neutral", 172.0f, 55.0f, 3.5f, 188.0f,
-                      100.0f, 20.0f, 1200, 176.0f, 30.0f});
+                      100.0f, 20.0f, 1200, 176.0f, 30.0f,
+                      100, 25, 70, 40});
 }
 
 // ========== WiFi ==========
@@ -119,6 +126,8 @@ void setup() {
   Serial.println("\n[BOOT] Keg Still GLITCH (split build)");
 
   control::begin();
+  valve::begin();
+  history::begin();
 
   // Load persistent state first
   storage::begin();
@@ -158,6 +167,7 @@ void setup() {
 void loop() {
   ArduinoOTA.handle();
   server.handleClient();
+  valve::poll();
 
   unsigned long now = millis();
 
@@ -175,6 +185,7 @@ void loop() {
       r.power = currentPower;
       r.abv   = estimateABV(currentTempC);
       r.stage = (uint8_t)currentStage;
+      r.valve = currentValvePos;
       sessionReadings.push_back(r);
     }
   }

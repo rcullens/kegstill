@@ -43,6 +43,10 @@ void storage::saveProfiles() {
     o["headsDuration_s"] = p.headsDuration_s;
     o["tailsTemp"]       = p.tailsTemp;
     o["tailsPower"]      = p.tailsPower;
+    o["valveHeatup"]     = p.valveHeatup;
+    o["valveHeads"]      = p.valveHeads;
+    o["valveHearts"]     = p.valveHearts;
+    o["valveTails"]      = p.valveTails;
   }
   String json; serializeJson(doc, json);
   prefs.begin(NS, false);
@@ -72,6 +76,10 @@ bool storage::loadProfiles() {
     p.headsDuration_s = o["headsDuration_s"] | 900;     // 15 min
     p.tailsTemp       = o["tailsTemp"]       | (p.targetTemp + 4.0f);
     p.tailsPower      = o["tailsPower"]      | 35.0f;
+    p.valveHeatup     = o["valveHeatup"]     | 100;
+    p.valveHeads      = o["valveHeads"]      | 30;
+    p.valveHearts     = o["valveHearts"]     | 80;
+    p.valveTails      = o["valveTails"]      | 50;
     profiles.push_back(p);
   }
   return !profiles.empty();

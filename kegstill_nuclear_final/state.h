@@ -24,6 +24,11 @@ struct Profile {
   uint16_t headsDuration_s; // seconds in HEADS
   float  tailsTemp;         // °F - transition Hearts -> Tails
   float  tailsPower;        // % during TAILS
+  // Per-stage motorized ball valve setpoint (0-100). 100=fully open.
+  uint8_t valveHeatup;
+  uint8_t valveHeads;
+  uint8_t valveHearts;
+  uint8_t valveTails;
 };
 
 struct BatchInfo {
@@ -40,6 +45,7 @@ struct Reading {
   float power;        // %
   float abv;          // estimated %
   uint8_t stage;
+  uint8_t valve;      // 0-100 valve position
 };
 
 // ========== Global state (defined in state.cpp via .ino) ==========
@@ -51,6 +57,8 @@ extern int   currentProfileIndex;
 extern float currentTempC;
 extern float currentPower;
 extern float targetPower;
+extern uint8_t currentValvePos;       // 0-100, motorized ball valve setpoint
+extern bool  valveAutoFollowStage;    // if true, auto-set valve from profile stage
 extern bool  automationEnabled;
 extern bool  isRunning;
 extern bool  estopActive;

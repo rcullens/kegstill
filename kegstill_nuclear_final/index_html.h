@@ -93,6 +93,20 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
         <button onclick="startDistill()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-6 rounded-3xl text-2xl">DISTILL THIS SHIT!</button>
         <button onclick="stopRun()" class="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 py-6 rounded-3xl font-semibold">STOP RUN</button>
       </div>
+
+      <!-- VALVE STRIP -->
+      <div class="mt-5 metric rounded-2xl p-5 border border-zinc-700">
+        <div class="flex justify-between items-baseline mb-2">
+          <div class="text-xs uppercase tracking-widest text-zinc-500">BALL VALVE</div>
+          <div><span id="valve-value" class="text-3xl font-bold text-sky-400">0</span><span class="text-zinc-400 ml-1">%</span></div>
+        </div>
+        <input type="range" id="valve-slider" min="0" max="100" step="1" value="0" class="w-full accent-sky-500" oninput="setValve(this.value)">
+        <label class="flex items-center gap-x-2 mt-3 cursor-pointer text-xs">
+          <input type="checkbox" id="valve-auto" onchange="toggleValveAuto()" class="accent-sky-500">
+          <span>auto-follow stage profile</span>
+        </label>
+      </div>
+
       <div class="mt-3 grid grid-cols-2 gap-4">
         <button onclick="advanceStage()" class="bg-amber-700 hover:bg-amber-600 py-3 rounded-2xl text-sm font-semibold">SKIP TO NEXT STAGE</button>
         <button onclick="resetSession()" class="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 py-3 rounded-2xl text-sm">RESET SESSION</button>
@@ -115,7 +129,9 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
       <div onclick="switchTab(0)" class="nav-tab active cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-0">PROFILES</div>
       <div onclick="switchTab(1)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-1">BATCH INFO</div>
       <div onclick="switchTab(2)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-2">CONTROLS</div>
-      <div onclick="switchTab(3)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-3">SYSTEM</div>
+      <div onclick="switchTab(3)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-3">DILUTE</div>
+      <div onclick="switchTab(4)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-4">HISTORY</div>
+      <div onclick="switchTab(5)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-5">SYSTEM</div>
     </div>
 
     <div id="tab-content-0" class="tab-content section rounded-b-3xl p-8">
@@ -174,6 +190,105 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
     </div>
 
     <div id="tab-content-3" class="tab-content section rounded-b-3xl p-8 hidden">
+      <div class="max-w-3xl">
+        <div class="font-semibold text-xl mb-2">Dilution Calculator</div>
+        <div class="text-xs text-zinc-500 mb-6">Mixing math is the simple <code>V&middot;A = V&middot;A</code> approximation. Real ethanol/water has a small volume contraction (~3%); for precision use TTB Table 6.</div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+          <div>
+            <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-1.5">Source ABV</label>
+            <div class="flex gap-x-2 mb-2 text-xs">
+              <button id="dil-src-wash" onclick="dilUseSource('wash')" class="px-3 py-1 rounded-xl bg-zinc-800 border border-zinc-700">From batch (wash %)</button>
+              <button id="dil-src-meas" onclick="dilUseSource('meas')" class="px-3 py-1 rounded-xl bg-amber-700 border border-amber-500">Measured (hydrometer)</button>
+            </div>
+            <div class="flex gap-x-3">
+              <input id="dil-src-val" type="number" step="0.1" value="60" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-5 py-3 text-2xl font-semibold">
+              <select id="dil-src-unit" onchange="dilUpdate()" class="bg-zinc-900 border border-zinc-700 rounded-2xl px-3 text-sm">
+                <option value="abv">% ABV</option>
+                <option value="proof">PROOF</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-1.5">Target ABV</label>
+            <div class="h-7"></div>
+            <div class="flex gap-x-3">
+              <input id="dil-tgt-val" type="number" step="0.1" value="40" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-5 py-3 text-2xl font-semibold">
+              <select id="dil-tgt-unit" onchange="dilUpdate()" class="bg-zinc-900 border border-zinc-700 rounded-2xl px-3 text-sm">
+                <option value="abv">% ABV</option>
+                <option value="proof">PROOF</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-1.5">Desired Final Volume (this jar)</label>
+            <div class="flex gap-x-3">
+              <input id="dil-vol-val" type="number" step="0.1" value="750" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-5 py-3 text-2xl font-semibold">
+              <select id="dil-vol-unit" onchange="dilUpdate()" class="bg-zinc-900 border border-zinc-700 rounded-2xl px-3 text-sm">
+                <option value="oz">FL OZ</option>
+                <option value="qt">QUARTS</option>
+                <option value="gal">US GAL</option>
+                <option value="ml" selected>mL</option>
+                <option value="L">LITERS</option>
+              </select>
+            </div>
+            <div class="mt-2 text-xs text-zinc-500">Default starts metric; switch unit any time.</div>
+          </div>
+
+          <div>
+            <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-1.5">Diluent</label>
+            <input id="dil-water-label" type="text" value="distilled water" class="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-5 py-3 text-sm">
+          </div>
+        </div>
+
+        <button onclick="dilUpdate()" class="mt-6 px-8 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-bold">CALCULATE</button>
+
+        <div id="dil-result" class="mt-8 hidden">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+            <div class="metric p-5 rounded-2xl border border-amber-700">
+              <div class="text-xs uppercase tracking-widest text-amber-400 mb-2">DISTILLATE</div>
+              <div class="text-3xl font-bold" id="dil-r-spirit">--</div>
+              <div class="text-xs text-zinc-500 mt-1" id="dil-r-spirit-alt">--</div>
+            </div>
+            <div class="metric p-5 rounded-2xl border border-sky-700">
+              <div class="text-xs uppercase tracking-widest text-sky-400 mb-2" id="dil-r-water-lbl">WATER TO ADD</div>
+              <div class="text-3xl font-bold" id="dil-r-water">--</div>
+              <div class="text-xs text-zinc-500 mt-1" id="dil-r-water-alt">--</div>
+            </div>
+            <div class="metric p-5 rounded-2xl border border-emerald-700">
+              <div class="text-xs uppercase tracking-widest text-emerald-400 mb-2">FINAL JAR</div>
+              <div class="text-3xl font-bold" id="dil-r-final">--</div>
+              <div class="text-xs text-zinc-500 mt-1" id="dil-r-final-alt">--</div>
+            </div>
+          </div>
+          <div id="dil-warn" class="mt-4 text-sm text-red-400 hidden"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-content-4" class="tab-content section rounded-b-3xl p-8 hidden">
+      <div class="flex justify-between mb-6">
+        <div class="font-semibold text-xl">Run History</div>
+        <button onclick="loadHistory()" class="px-5 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-2xl text-sm">REFRESH</button>
+      </div>
+      <div id="history-list" class="space-y-3"></div>
+      <div id="history-viewer" class="mt-8 hidden">
+        <div class="flex justify-between items-center mb-3">
+          <div class="font-semibold" id="history-viewer-title">Run</div>
+          <div class="flex gap-x-2">
+            <button onclick="closeHistoryViewer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-2xl text-xs">CLOSE</button>
+          </div>
+        </div>
+        <div style="position: relative; height: 320px; width: 100%; overflow: hidden;">
+          <canvas id="historyChart"></canvas>
+        </div>
+        <pre id="history-batch" class="mt-4 text-xs text-zinc-400 whitespace-pre-wrap"></pre>
+      </div>
+    </div>
+
+    <div id="tab-content-5" class="tab-content section rounded-b-3xl p-8 hidden">
       <div class="font-semibold text-xl mb-4">WiFi Credentials</div>
       <div class="text-xs text-zinc-500 mb-4">Stored in NVS. Device reboots after save.</div>
       <div class="max-w-md space-y-3">
@@ -242,6 +357,23 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
       <div>
         <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-1">Tails power %</label>
         <input id="pf-tailsp" type="number" step="1" value="35" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-4 py-2">
+      </div>
+      <div class="col-span-2 mt-2 text-xs uppercase tracking-widest text-sky-400 border-t border-zinc-800 pt-3">Ball Valve per stage (0-100%)</div>
+      <div>
+        <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-1">Valve - Heatup %</label>
+        <input id="pf-v-heatup" type="number" min="0" max="100" step="1" value="100" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-4 py-2">
+      </div>
+      <div>
+        <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-1">Valve - Heads %</label>
+        <input id="pf-v-heads" type="number" min="0" max="100" step="1" value="30" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-4 py-2">
+      </div>
+      <div>
+        <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-1">Valve - Hearts %</label>
+        <input id="pf-v-hearts" type="number" min="0" max="100" step="1" value="80" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-4 py-2">
+      </div>
+      <div>
+        <label class="block text-xs uppercase tracking-widest text-zinc-500 mb-1">Valve - Tails %</label>
+        <input id="pf-v-tails" type="number" min="0" max="100" step="1" value="50" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-4 py-2">
       </div>
     </div>
     <div class="mt-6 grid grid-cols-2 gap-3">
@@ -335,6 +467,13 @@ function updateDashboard(data) {
 
   updateStagePips(data.stageIdx);
 
+  // valve display + checkbox sync
+  document.getElementById('valve-value').innerText = data.valvePos;
+  var vs = document.getElementById('valve-slider');
+  if (vs && document.activeElement !== vs) vs.value = data.valvePos;
+  var va = document.getElementById('valve-auto');
+  if (va) va.checked = !!data.valveAuto;
+
   if (data.status !== 'IDLE' && chart && data.tempF) pushChart(data.tempF, data.power, data.elapsed);
   var autoToggle = document.getElementById('auto-toggle');
   if (autoToggle) autoToggle.checked = data.automation;
@@ -378,6 +517,16 @@ function stopRun() { if (confirm('Stop current run?')) fetch('/api/stop', {metho
 function doEStop() { if (!confirm('E-STOP the still?')) return; fetch('/api/estop', {method: 'POST'}); }
 function toggleAutomation() { var en = document.getElementById('auto-toggle').checked; fetch('/api/automation', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({enabled:en}) }); }
 function advanceStage() { fetch('/api/advance', {method:'POST'}); }
+
+function setValve(val) {
+  var v = parseInt(val, 10);
+  document.getElementById('valve-value').innerText = v;
+  fetch('/api/valve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pos: v}) });
+}
+function toggleValveAuto() {
+  var en = document.getElementById('valve-auto').checked;
+  fetch('/api/valve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({auto: en}) });
+}
 
 function switchTab(tab) {
   var tabs = document.querySelectorAll('.tab-content');
@@ -432,7 +581,11 @@ function saveNewProfile() {
     headsPower:  parseFloat(document.getElementById('pf-heads').value),
     headsDuration_s: Math.round(parseFloat(document.getElementById('pf-heads-min').value) * 60),
     tailsTemp:  parseFloat(document.getElementById('pf-tailst').value),
-    tailsPower: parseFloat(document.getElementById('pf-tailsp').value)
+    tailsPower: parseFloat(document.getElementById('pf-tailsp').value),
+    valveHeatup: parseInt(document.getElementById('pf-v-heatup').value, 10),
+    valveHeads:  parseInt(document.getElementById('pf-v-heads').value, 10),
+    valveHearts: parseInt(document.getElementById('pf-v-hearts').value, 10),
+    valveTails:  parseInt(document.getElementById('pf-v-tails').value, 10)
   };
   fetch('/api/profile/new', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }).then(function(){
     closeProfileModal(); loadProfiles();
@@ -461,6 +614,142 @@ function saveWifi() {
 function exportData() { window.open('/api/export', '_blank'); }
 function resetSession() { if (confirm('Reset session?')) fetch('/api/reset', {method: 'POST'}); }
 
+// ============ DILUTION CALCULATOR ============
+// All math is done in mL internally, then formatted back to chosen units.
+var DIL_FACTORS = { ml: 1, L: 1000, oz: 29.5735, qt: 946.353, gal: 3785.41 };
+var dilSource = 'meas';   // 'wash' or 'meas'
+var lastWashABV = null;   // pulled from batch info
+
+function dilUseSource(which) {
+  dilSource = which;
+  var w = document.getElementById('dil-src-wash');
+  var m = document.getElementById('dil-src-meas');
+  w.className = 'px-3 py-1 rounded-xl border ' + (which==='wash' ? 'bg-amber-700 border-amber-500' : 'bg-zinc-800 border-zinc-700');
+  m.className = 'px-3 py-1 rounded-xl border ' + (which==='meas' ? 'bg-amber-700 border-amber-500' : 'bg-zinc-800 border-zinc-700');
+  if (which === 'wash' && lastWashABV !== null) {
+    document.getElementById('dil-src-val').value = lastWashABV;
+    document.getElementById('dil-src-unit').value = 'abv';
+  }
+  dilUpdate();
+}
+
+function toAbv(val, unit)  { return unit === 'proof' ? val / 2.0 : val; }
+function fromMl(ml, unit)  { return ml / DIL_FACTORS[unit]; }
+function fmtVol(ml, unit) {
+  var v = fromMl(ml, unit);
+  return v.toFixed(unit === 'ml' ? 0 : 2) + ' ' + (unit==='ml'?'mL':unit==='L'?'L':unit==='oz'?'fl oz':unit==='qt'?'qt':'gal');
+}
+
+function dilUpdate() {
+  var srcVal  = parseFloat(document.getElementById('dil-src-val').value);
+  var srcUnit = document.getElementById('dil-src-unit').value;
+  var tgtVal  = parseFloat(document.getElementById('dil-tgt-val').value);
+  var tgtUnit = document.getElementById('dil-tgt-unit').value;
+  var volVal  = parseFloat(document.getElementById('dil-vol-val').value);
+  var volUnit = document.getElementById('dil-vol-unit').value;
+  var label   = document.getElementById('dil-water-label').value || 'water';
+
+  var srcAbv = toAbv(srcVal, srcUnit);
+  var tgtAbv = toAbv(tgtVal, tgtUnit);
+  var totalMl = volVal * DIL_FACTORS[volUnit];
+
+  var result = document.getElementById('dil-result');
+  var warn   = document.getElementById('dil-warn');
+  warn.classList.add('hidden');
+
+  if (!isFinite(srcAbv) || !isFinite(tgtAbv) || !isFinite(totalMl) || totalMl<=0) return;
+  if (srcAbv <= 0) { warn.innerText = 'Source ABV must be > 0.'; warn.classList.remove('hidden'); result.classList.remove('hidden'); return; }
+  if (tgtAbv > srcAbv) { warn.innerText = 'Target ABV ('+tgtAbv.toFixed(1)+'%) is higher than source ABV ('+srcAbv.toFixed(1)+'%). Cannot dilute UP — distill more, or lower target.'; warn.classList.remove('hidden'); }
+
+  var spiritMl = totalMl * (tgtAbv / srcAbv);
+  if (spiritMl > totalMl) spiritMl = totalMl;
+  var waterMl  = totalMl - spiritMl;
+
+  document.getElementById('dil-r-spirit').innerText      = fmtVol(spiritMl, volUnit);
+  document.getElementById('dil-r-spirit-alt').innerText  = fmtVol(spiritMl, volUnit==='ml'?'oz':'ml') + '  @ ' + srcAbv.toFixed(1) + '% ABV';
+  document.getElementById('dil-r-water-lbl').innerText   = (label || 'water').toUpperCase() + ' TO ADD';
+  document.getElementById('dil-r-water').innerText       = fmtVol(waterMl, volUnit);
+  document.getElementById('dil-r-water-alt').innerText   = fmtVol(waterMl, volUnit==='ml'?'oz':'ml');
+  document.getElementById('dil-r-final').innerText       = fmtVol(totalMl, volUnit);
+  document.getElementById('dil-r-final-alt').innerText   = '@ ' + tgtAbv.toFixed(1) + '% ABV  (' + (tgtAbv*2).toFixed(0) + ' proof)';
+
+  result.classList.remove('hidden');
+}
+
+// ============ HISTORY ============
+var historyChart = null;
+function loadHistory() {
+  fetch('/api/history').then(function(r){return r.json();}).then(function(rows){
+    var box = document.getElementById('history-list');
+    if (!rows || rows.length === 0) { box.innerHTML = '<div class="text-zinc-500 text-sm">No saved runs yet. Complete a run to see it here.</div>'; return; }
+    box.innerHTML = '';
+    rows.sort(function(a,b){ return b.id - a.id; });
+    rows.forEach(function(row){
+      var card = document.createElement('div');
+      card.className = 'p-4 rounded-2xl border border-zinc-700 bg-zinc-900 flex justify-between items-center';
+      var h = Math.floor(row.duration/3600), m = Math.floor((row.duration%3600)/60);
+      card.innerHTML = '<div><div class="font-bold">Run #' + row.id + ' &mdash; ' + row.profile + '</div>' +
+        '<div class="text-xs text-zinc-400 mt-1">' + h + 'h ' + m + 'm  &middot;  ' + row.points + ' samples  &middot;  ' + row.bytes + ' B</div></div>' +
+        '<div class="flex gap-x-2">' +
+        '<button class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-xl text-xs">VIEW</button>' +
+        '<button class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-xl text-xs">CSV</button>' +
+        '<button class="px-3 py-2 bg-red-900 hover:bg-red-800 border border-red-700 rounded-xl text-xs">DEL</button>' +
+        '</div>';
+      var btns = card.querySelectorAll('button');
+      btns[0].onclick = function(){ viewRun(row.id); };
+      btns[1].onclick = function(){ window.open('/api/history/csv?id=' + row.id, '_blank'); };
+      btns[2].onclick = function(){ if (confirm('Delete run #'+row.id+'?')) fetch('/api/history/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id: row.id})}).then(loadHistory); };
+      box.appendChild(card);
+    });
+  });
+}
+
+function viewRun(id) {
+  fetch('/api/history/get?id=' + id).then(function(r){return r.json();}).then(function(d){
+    document.getElementById('history-viewer-title').innerText = 'Run #' + d.id + ' - ' + d.profile + ' (' + Math.round(d.duration/60) + ' min)';
+    var b = d.batch || {};
+    document.getElementById('history-batch').innerText =
+      'Wash ABV: ' + (b.washABV||'-') + '%\nVolume: ' + (b.volume||'-') + ' ' + (b.unit||'') +
+      '\nIngredients: ' + (b.ingredients||'-') + '\nNotes: ' + (b.notes||'-');
+
+    var labels = [], temps = [], pows = [], valves = [];
+    (d.readings || []).forEach(function(r){
+      // stored as [ts_s, temp_c, power, abv, stage, valve]
+      var sec = r[0];
+      labels.push(Math.floor(sec/60) + ':' + String(sec%60).padStart(2,'0'));
+      temps.push(r[1] * 9/5 + 32);
+      pows.push(r[2]);
+      valves.push(r[5] || 0);
+    });
+
+    var ctx = document.getElementById('historyChart');
+    if (historyChart) historyChart.destroy();
+    historyChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: labels, datasets: [
+        { label: 'Temp F', data: temps, borderColor:'#f59e0b', borderWidth:2, tension:0.3, yAxisID:'y', pointRadius:0 },
+        { label: 'Power %', data: pows, borderColor:'#64748b', borderWidth:2, tension:0.3, yAxisID:'y1', pointRadius:0 },
+        { label: 'Valve %', data: valves, borderColor:'#38bdf8', borderWidth:2, tension:0.3, yAxisID:'y1', pointRadius:0, borderDash:[4,4] }
+      ]},
+      options: { responsive:true, maintainAspectRatio:false, animation:false,
+        scales: {
+          y:  { position:'left',  min:60, max:220, grid:{color:'#27272a'}, ticks:{color:'#a1a1aa'} },
+          y1: { position:'right', min:0,  max:100, grid:{drawOnChartArea:false}, ticks:{color:'#a1a1aa'} },
+          x:  { grid:{color:'#27272a'}, ticks:{color:'#a1a1aa', maxRotation:0, autoSkip:true} }
+        },
+        plugins:{ legend:{ labels:{color:'#a1a1aa'} } }
+      }
+    });
+    document.getElementById('history-viewer').classList.remove('hidden');
+  });
+}
+
+function closeHistoryViewer() { document.getElementById('history-viewer').classList.add('hidden'); }
+
+// Hook tab switch to lazy-load history
+var origSwitchTab = switchTab;
+switchTab = function(tab) { origSwitchTab(tab); if (tab === 4) loadHistory(); };
+
 window.onload = function() {
   initChart();
   loadProfiles();
@@ -475,6 +764,7 @@ window.onload = function() {
     document.getElementById('batch-unit').value = b.unit || 'gal';
     document.getElementById('batch-ingredients').value = b.ingredients || '';
     document.getElementById('batch-notes').value = b.notes || '';
+    lastWashABV = b.washABV;
   });
 };
 </script>

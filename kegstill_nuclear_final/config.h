@@ -6,6 +6,16 @@
 #define SSR_PIN              5     // GPIO5 -> Relay board -> Omron G3NA-240B-UTU
 #define LED_PIN              2     // onboard LED (optional)
 
+// Motorized ball valve (PLACEHOLDER pins — set when you wire the actuator).
+// Typical options:
+//   (a) 2-wire DC motor + driver + limit switches -> drive via 2 GPIOs for OPEN/CLOSE
+//   (b) servo / linear actuator -> single PWM GPIO
+//   (c) stepper -> step/dir pair
+// For now we only expose a 0-100% setpoint. Update valve.cpp once you pick.
+#define VALVE_OPEN_PIN       18
+#define VALVE_CLOSE_PIN      19
+#define VALVE_FEEDBACK_PIN   34    // optional ADC for position feedback
+
 // ====== TIMING ======
 const unsigned long CONTROL_PERIOD_MS  = 250;   // PID/stage update
 const unsigned long STATUS_PERIOD_MS   = 650;   // session sampling

@@ -14,4 +14,5 @@ namespace control {
   void setManualPower(float pct);
   void setAutomation(bool en);
   void advanceStage();          // operator skip-to-next-stage
+  void reapplyStageValve();     // re-issue valve target for current stage
 }
