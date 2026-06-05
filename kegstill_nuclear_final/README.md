@@ -55,7 +55,8 @@ Either:
 ### 5. Pick board + partition scheme + port
 - **Tools → Board → esp32 → ESP32 Dev Module**
 - **Tools → Flash Size → 4MB (32Mb)**
-- **Tools → Partition Scheme → "Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)"** — required so LittleFS has somewhere to live for the run-history files. (The scheme is named "spiffs" but ESP32 LittleFS uses the same partition.)
+- **Tools → Partition Scheme → "Minimal SPIFFS (1.9MB APP with OTA / 190KB SPIFFS)"**
+  This is **required** — the default 1.2 MB app partition is too small (the firmware is ~1.4 MB once NimBLE + WebServer + LittleFS + embedded HTML are linked in). Minimal SPIFFS gives ~1.9 MB for code (plenty of headroom) and ~190 KB for LittleFS run history (good for ~7-8 saved runs). For more history capacity at the cost of OTA, use "No OTA (2MB APP / 2MB SPIFFS)".
 - **Tools → Upload Speed → 921600**
 - **Tools → Core Debug Level → None** (or "Error" for less serial spam)
 - **Tools → PSRAM → Disabled** (WROOM-DA has no PSRAM)
@@ -110,6 +111,7 @@ Two options:
 
 | Symptom | Fix |
 |---|---|
+| `Sketch too big; text section exceeds available space` | Wrong partition scheme. Set **Tools → Partition Scheme → Minimal SPIFFS (1.9MB APP with OTA / 190KB SPIFFS)**. |
 | `'function' does not name a type` | You re-merged HTML into the `.ino`. Keep it in `index_html.h`. |
 | `NimBLEScanCallbacks does not name a type` | NimBLE-Arduino is v1.x. Upgrade to v2.x. |
 | `StaticJsonDocument is deprecated` warnings | You installed ArduinoJson v7. Downgrade to v6.21.x. |

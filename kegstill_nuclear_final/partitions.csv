@@ -1,0 +1,20 @@
+# Custom partition table for kegstill — balanced for OTA + LittleFS history.
+#
+# To use: Tools -> Partition Scheme -> "Custom" (only available in some core
+# versions). If "Custom" isn't shown, install arduino-cli or copy this file
+# to your ESP32 core's tools/partitions/ folder as "kegstill.csv" and add
+# an entry to boards.txt. Easier: just use stock "Minimal SPIFFS" scheme.
+#
+# 4 MB flash budget:
+#   nvs              20 KB   profiles, batch, wifi, run snapshot
+#   otadata           8 KB   OTA pointer
+#   app0           1792 KB   active firmware
+#   app1           1792 KB   OTA staging slot (must match app0)
+#   spiffs          448 KB   LittleFS for run history (~17 runs)
+#
+# Name,   Type, SubType, Offset,   Size,    Flags
+nvs,      data, nvs,     0x9000,   0x5000,
+otadata,  data, ota,     0xe000,   0x2000,
+app0,     app,  ota_0,   0x10000,  0x1C0000,
+app1,     app,  ota_1,   0x1D0000, 0x1C0000,
+spiffs,   data, spiffs,  0x390000, 0x70000,
