@@ -169,3 +169,17 @@ bool storage::loadRunSnapshot() {
   }
   return false;
 }
+
+// ---------- BLE target ----------
+void storage::saveBleTarget(const String& addr) {
+  prefs.begin(NS, false);
+  prefs.putString("ble_target", addr);
+  prefs.end();
+}
+
+String storage::loadBleTarget() {
+  prefs.begin(NS, true);
+  String a = prefs.getString("ble_target", "");
+  prefs.end();
+  return a;
+}

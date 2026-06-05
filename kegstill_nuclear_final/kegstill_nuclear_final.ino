@@ -155,6 +155,10 @@ void setup() {
 
   // BLE
   ble_scanner::begin();
+  {
+    String t = storage::loadBleTarget();
+    if (t.length() > 0) ble_scanner::setTargetAddress(t);
+  }
 
   // HTTP
   web_handlers::registerRoutes(server);
@@ -168,6 +172,7 @@ void loop() {
   ArduinoOTA.handle();
   server.handleClient();
   valve::poll();
+  ble_scanner::poll();
 
   unsigned long now = millis();
 

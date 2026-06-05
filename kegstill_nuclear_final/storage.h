@@ -28,4 +28,8 @@ namespace storage {
   void saveRunSnapshot();      // call periodically while running
   void clearRunSnapshot();     // call on clean stop / reset / estop ack
   bool loadRunSnapshot();      // sets resume* vars; returns true if a run was active
+
+  // BLE target MAC (empty = auto)
+  void   saveBleTarget(const String& addr);
+  String loadBleTarget();
 }

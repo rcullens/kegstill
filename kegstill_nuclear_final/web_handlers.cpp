@@ -6,6 +6,7 @@
 #include "control.h"
 #include "valve.h"
 #include "history.h"
+#include "ble_scanner.h"
 #include "index_html.h"
 #include <ArduinoJson.h>
 
@@ -18,7 +19,6 @@ static void handleRoot() {
 static void handleStatus() {
   StaticJsonDocument<640> doc;
   doc["power"]      = currentPower;
-  doc["abv"]        = estimateABV(currentTempC);
   unsigned long elapsed = isRunning ? ((millis() - startMillis) / 1000UL) + (resumeOffsetMs / 1000UL) : 0;
   doc["elapsed"]    = elapsed;
   doc["status"]     = estopActive ? "ESTOP" : (isRunning ? (automationEnabled ? "AUTO" : "MANUAL") : "IDLE");
@@ -38,9 +38,11 @@ static void handleStatus() {
   if (bleTempValid) {
     doc["tempF"] = round(cToF(currentTempC) * 10) / 10.0;
     doc["tempC"] = round(currentTempC * 10) / 10.0;
+    doc["abv"]   = estimateABV(currentTempC);
   } else {
     doc["tempF"] = (const char*)nullptr;
     doc["tempC"] = (const char*)nullptr;
+    doc["abv"]   = (const char*)nullptr;  // no probe = no fake ABV
   }
   String out; serializeJson(doc, out);
   S->send(200, "application/json", out);
@@ -267,6 +269,43 @@ static void handleHistoryDelete() {
   S->send(ok ? 200 : 404);
 }
 
+// ---------- BLE scan / select ----------
+static void handleBleScan() {
+  auto devs = ble_scanner::snapshotSeen();
+  String target = ble_scanner::getTargetAddress();
+  String out = "{\"target\":\"" + target + "\",\"devices\":[";
+  uint32_t now = millis();
+  for (size_t i = 0; i < devs.size(); i++) {
+    if (i) out += ",";
+    auto& d = devs[i];
+    String esc = d.name; esc.replace("\\","\\\\"); esc.replace("\"","\\\"");
+    out += "{\"addr\":\"" + d.addr + "\"";
+    out += ",\"name\":\"" + esc + "\"";
+    out += ",\"rssi\":" + String(d.rssi);
+    out += ",\"hasTemp\":" + String(d.hasTemp ? "true" : "false");
+    if (d.hasTemp) out += ",\"tempC\":" + String(d.lastTempC, 2);
+    out += ",\"ageMs\":" + String((uint32_t)(now - d.lastSeenMs));
+    out += "}";
+  }
+  out += "]}";
+  S->send(200, "application/json", out);
+}
+
+static void handleBleSelect() {
+  if (!S->hasArg("plain")) { S->send(400); return; }
+  StaticJsonDocument<128> doc;
+  if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
+  String addr = doc["addr"] | "";
+  ble_scanner::setTargetAddress(addr);
+  storage::saveBleTarget(addr);
+  S->send(200);
+}
+
+static void handleBleClear() {
+  ble_scanner::clearSeen();
+  S->send(200);
+}
+
 void web_handlers::registerRoutes(WebServer& server) {
   S = &server;
   server.on("/",                  handleRoot);
@@ -291,4 +330,7 @@ void web_handlers::registerRoutes(WebServer& server) {
   server.on("/api/history/get",   HTTP_GET,  handleHistoryGet);
   server.on("/api/history/csv",   HTTP_GET,  handleHistoryCsv);
   server.on("/api/history/delete",HTTP_POST, handleHistoryDelete);
+  server.on("/api/ble/scan",      HTTP_GET,  handleBleScan);
+  server.on("/api/ble/select",    HTTP_POST, handleBleSelect);
+  server.on("/api/ble/clear",     HTTP_POST, handleBleClear);
 }

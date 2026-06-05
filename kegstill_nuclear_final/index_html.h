@@ -129,9 +129,10 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
       <div onclick="switchTab(0)" class="nav-tab active cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-0">PROFILES</div>
       <div onclick="switchTab(1)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-1">BATCH INFO</div>
       <div onclick="switchTab(2)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-2">CONTROLS</div>
-      <div onclick="switchTab(3)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-3">DILUTE</div>
-      <div onclick="switchTab(4)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-4">HISTORY</div>
-      <div onclick="switchTab(5)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-5">SYSTEM</div>
+      <div onclick="switchTab(3)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-3">BLE PROBE</div>
+      <div onclick="switchTab(4)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-4">DILUTE</div>
+      <div onclick="switchTab(5)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-5">HISTORY</div>
+      <div onclick="switchTab(6)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-6">SYSTEM</div>
     </div>
 
     <div id="tab-content-0" class="tab-content section rounded-b-3xl p-8">
@@ -190,6 +191,30 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
     </div>
 
     <div id="tab-content-3" class="tab-content section rounded-b-3xl p-8 hidden">
+      <div class="flex justify-between mb-6">
+        <div>
+          <div class="font-semibold text-xl">BLE Probe Selection</div>
+          <div class="text-xs text-zinc-500 mt-1">Pick which advertising device to use as the vapor probe. Selection persists across reboots.</div>
+        </div>
+        <div class="flex gap-x-2">
+          <button onclick="loadBleScan()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-2xl text-sm">REFRESH</button>
+          <button onclick="clearBleScan()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-2xl text-sm">CLEAR LIST</button>
+        </div>
+      </div>
+
+      <div id="ble-target-row" class="mb-5 flex justify-between items-center p-4 rounded-2xl border border-amber-700 bg-amber-950/30">
+        <div>
+          <div class="text-xs uppercase tracking-widest text-amber-400">CURRENT TARGET</div>
+          <div id="ble-target-display" class="font-mono text-sm mt-1">(auto - any CQ60 in range)</div>
+        </div>
+        <button onclick="selectBleDevice('')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-2xl text-xs">RESET TO AUTO</button>
+      </div>
+
+      <div id="ble-list" class="space-y-2"></div>
+      <div id="ble-empty" class="text-zinc-500 text-sm hidden">No devices advertising yet. Wait a few seconds and refresh — or wake your CQ60.</div>
+    </div>
+
+    <div id="tab-content-4" class="tab-content section rounded-b-3xl p-8 hidden">
       <div class="max-w-3xl">
         <div class="font-semibold text-xl mb-2">Dilution Calculator</div>
         <div class="text-xs text-zinc-500 mb-6">Mixing math is the simple <code>V&middot;A = V&middot;A</code> approximation. Real ethanol/water has a small volume contraction (~3%); for precision use TTB Table 6.</div>
@@ -268,7 +293,7 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
       </div>
     </div>
 
-    <div id="tab-content-4" class="tab-content section rounded-b-3xl p-8 hidden">
+    <div id="tab-content-5" class="tab-content section rounded-b-3xl p-8 hidden">
       <div class="flex justify-between mb-6">
         <div class="font-semibold text-xl">Run History</div>
         <button onclick="loadHistory()" class="px-5 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-2xl text-sm">REFRESH</button>
@@ -288,7 +313,7 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
       </div>
     </div>
 
-    <div id="tab-content-5" class="tab-content section rounded-b-3xl p-8 hidden">
+    <div id="tab-content-6" class="tab-content section rounded-b-3xl p-8 hidden">
       <div class="font-semibold text-xl mb-4">WiFi Credentials</div>
       <div class="text-xs text-zinc-500 mb-4">Stored in NVS. Device reboots after save.</div>
       <div class="max-w-md space-y-3">
@@ -410,8 +435,7 @@ function initChart() {
 function fmtTime(sec) {
   var h = Math.floor(sec / 3600);
   var m = Math.floor((sec % 3600) / 60);
-  var s = sec % 60;
-  return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+  return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
 }
 
 function pushChart(tempF, power, elapsedSec) {
@@ -434,15 +458,24 @@ function updateStagePips(stageIdx) {
 function updateDashboard(data) {
   var tempEl = document.getElementById('temp-value');
   var tempCSmall = document.getElementById('temp-c-small');
+  var abvEl = document.getElementById('abv-value');
 
   if (data.tempF !== undefined && data.tempF !== null) {
     tempEl.innerText = data.tempF;
     tempCSmall.innerText = data.tempC + ' C';
     tempEl.style.color = '#fff';
   } else {
-    tempEl.innerText = 'NO';
-    tempCSmall.innerText = 'PROBE';
-    tempEl.style.color = '#f87171';
+    tempEl.innerText = '--';
+    tempCSmall.innerText = 'no probe';
+    tempEl.style.color = '#52525b';
+  }
+
+  if (data.abv !== undefined && data.abv !== null) {
+    abvEl.innerText = Math.round(data.abv);
+    abvEl.style.color = '#34d399';
+  } else {
+    abvEl.innerText = '--';
+    abvEl.style.color = '#52525b';
   }
 
   var blePill = document.getElementById('ble-pill');
@@ -450,7 +483,6 @@ function updateDashboard(data) {
   else { blePill.innerText = 'BLE WAIT'; blePill.className = 'px-3 py-1.5 rounded-full text-xs font-semibold bg-red-950 border border-red-600 text-red-400'; }
 
   document.getElementById('power-value').innerText = Math.round(data.power);
-  document.getElementById('abv-value').innerText = Math.round(data.abv);
   document.getElementById('target-temp').innerText = data.targetTemp || 180;
   document.getElementById('elapsed-value').innerText = fmtTime(data.elapsed || 0);
 
@@ -746,9 +778,66 @@ function viewRun(id) {
 
 function closeHistoryViewer() { document.getElementById('history-viewer').classList.add('hidden'); }
 
-// Hook tab switch to lazy-load history
+// Hook tab switch to lazy-load history / BLE scan
 var origSwitchTab = switchTab;
-switchTab = function(tab) { origSwitchTab(tab); if (tab === 4) loadHistory(); };
+switchTab = function(tab) {
+  origSwitchTab(tab);
+  if (tab === 3) loadBleScan();
+  if (tab === 5) loadHistory();
+};
+
+// ============ BLE PROBE SCAN ============
+function rssiBars(rssi) {
+  // -40 strong .. -90 weak
+  if (rssi >= -55) return 'rssi-4';
+  if (rssi >= -68) return 'rssi-3';
+  if (rssi >= -80) return 'rssi-2';
+  return 'rssi-1';
+}
+
+function loadBleScan() {
+  fetch('/api/ble/scan').then(function(r){return r.json();}).then(function(data){
+    var target = data.target || '';
+    document.getElementById('ble-target-display').innerText = target || '(auto - any CQ60 in range)';
+
+    var list = document.getElementById('ble-list');
+    var empty = document.getElementById('ble-empty');
+    list.innerHTML = '';
+    var devs = data.devices || [];
+    if (devs.length === 0) { empty.classList.remove('hidden'); return; }
+    empty.classList.add('hidden');
+    devs.sort(function(a,b){ return b.rssi - a.rssi; });
+
+    devs.forEach(function(d){
+      var isActive = (d.addr === target);
+      var ageS = Math.round(d.ageMs / 1000);
+      var card = document.createElement('div');
+      card.className = 'p-4 rounded-2xl border flex justify-between items-center ' +
+        (isActive ? 'border-emerald-500 bg-emerald-950/30' : 'border-zinc-700 bg-zinc-900');
+      var tempStr = d.hasTemp ? ('<span class="text-amber-400">' + (d.tempC * 9/5 + 32).toFixed(1) + ' F</span>') : '<span class="text-zinc-600">no temp data</span>';
+      card.innerHTML =
+        '<div class="min-w-0">' +
+          '<div class="font-bold truncate">' + (d.name || '(unnamed)') + '</div>' +
+          '<div class="font-mono text-xs text-zinc-400 mt-1">' + d.addr + '</div>' +
+          '<div class="text-xs mt-1">' + tempStr + ' &middot; <span class="text-zinc-500">RSSI ' + d.rssi + ' dBm &middot; ' + ageS + 's ago</span></div>' +
+        '</div>' +
+        '<button class="ml-4 px-4 py-2 rounded-xl text-xs font-semibold ' +
+          (isActive ? 'bg-emerald-700 text-emerald-100 border border-emerald-500' : 'bg-zinc-800 hover:bg-zinc-700 border border-zinc-600') +
+          '">' + (isActive ? 'TRACKING' : 'SELECT') + '</button>';
+      var btn = card.querySelector('button');
+      btn.onclick = function(){ if (!isActive) selectBleDevice(d.addr); };
+      list.appendChild(card);
+    });
+  });
+}
+
+function selectBleDevice(addr) {
+  fetch('/api/ble/select', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({addr: addr}) }).then(loadBleScan);
+}
+
+function clearBleScan() {
+  fetch('/api/ble/clear', {method:'POST'}).then(loadBleScan);
+}
 
 window.onload = function() {
   initChart();
