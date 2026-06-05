@@ -1,0 +1,225 @@
+// web_handlers.cpp
+#include "web_handlers.h"
+#include "config.h"
+#include "state.h"
+#include "storage.h"
+#include "control.h"
+#include "index_html.h"
+#include <ArduinoJson.h>
+
+static WebServer* S = nullptr;
+
+static void handleRoot() {
+  S->send_P(200, "text/html", INDEX_HTML);
+}
+
+static void handleStatus() {
+  StaticJsonDocument<640> doc;
+  doc["power"]      = currentPower;
+  doc["abv"]        = estimateABV(currentTempC);
+  unsigned long elapsed = isRunning ? ((millis() - startMillis) / 1000UL) + (resumeOffsetMs / 1000UL) : 0;
+  doc["elapsed"]    = elapsed;
+  doc["status"]     = estopActive ? "ESTOP" : (isRunning ? (automationEnabled ? "AUTO" : "MANUAL") : "IDLE");
+  doc["stage"]      = stageName(currentStage);
+  doc["stageIdx"]   = (uint8_t)currentStage;
+  doc["targetTemp"] = (profiles.size() > 0 && currentProfileIndex < (int)profiles.size())
+                     ? (int)profiles[currentProfileIndex].targetTemp : 180;
+  doc["profileIdx"] = currentProfileIndex;
+  doc["automation"] = automationEnabled;
+  doc["estop"]      = estopActive;
+  doc["bleOk"]      = bleTempValid;
+  doc["resumePending"] = resumePending;
+  doc["resumeElapsed"] = (uint32_t)resumeElapsedSec;
+
+  if (bleTempValid) {
+    doc["tempF"] = round(cToF(currentTempC) * 10) / 10.0;
+    doc["tempC"] = round(currentTempC * 10) / 10.0;
+  } else {
+    doc["tempF"] = (const char*)nullptr;
+    doc["tempC"] = (const char*)nullptr;
+  }
+  String out; serializeJson(doc, out);
+  S->send(200, "application/json", out);
+}
+
+static void handleStart() {
+  bool resume = false;
+  if (S->hasArg("plain")) {
+    StaticJsonDocument<64> d;
+    if (deserializeJson(d, S->arg("plain")) == DeserializationError::Ok) {
+      resume = d["resume"] | false;
+    }
+  }
+  if (resume && !resumePending) resume = false;
+  bool ok = control::startRun(resume);
+  if (!ok) { S->send(400, "application/json", "{\"error\":\"cannot start: no BLE probe or estop\"}"); return; }
+  resumePending = false;
+  S->send(200, "application/json", "{\"ok\":true}");
+}
+
+static void handleStop()  { control::stopRun(); S->send(200); }
+static void handleEStop() { control::estop();   S->send(200); }
+static void handleReset() { control::resetAll(); S->send(200); }
+
+static void handlePower() {
+  if (!S->hasArg("plain")) { S->send(400); return; }
+  StaticJsonDocument<128> doc;
+  if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
+  control::setManualPower(doc["power"] | currentPower);
+  S->send(200);
+}
+
+static void handleAutomation() {
+  if (!S->hasArg("plain")) { S->send(400); return; }
+  StaticJsonDocument<128> doc;
+  if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
+  control::setAutomation(doc["enabled"] | false);
+  S->send(200);
+}
+
+static void handleAdvanceStage() { control::advanceStage(); S->send(200); }
+
+static void serializeProfile(JsonObject o, const Profile& p) {
+  o["name"]            = p.name;
+  o["targetTemp"]      = p.targetTemp;
+  o["maxPower"]        = p.maxPower;
+  o["kp"]              = p.kp;
+  o["cutTemp"]         = p.cutTemp;
+  o["heatupPower"]     = p.heatupPower;
+  o["headsPower"]      = p.headsPower;
+  o["headsDuration_s"] = p.headsDuration_s;
+  o["tailsTemp"]       = p.tailsTemp;
+  o["tailsPower"]      = p.tailsPower;
+}
+
+static void handleProfiles() {
+  StaticJsonDocument<3072> doc;
+  JsonArray arr = doc.to<JsonArray>();
+  for (auto& p : profiles) serializeProfile(arr.createNestedObject(), p);
+  String out; serializeJson(doc, out);
+  S->send(200, "application/json", out);
+}
+
+static void handleLoadProfile() {
+  if (!S->hasArg("plain")) { S->send(400); return; }
+  StaticJsonDocument<128> doc;
+  if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
+  int idx = doc["index"] | 0;
+  if (idx >= 0 && idx < (int)profiles.size()) {
+    currentProfileIndex = idx;
+    storage::saveCurrentProfileIndex(idx);
+  }
+  S->send(200);
+}
+
+static void handleNewProfile() {
+  if (!S->hasArg("plain")) { S->send(400); return; }
+  StaticJsonDocument<512> doc;
+  if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
+  Profile p;
+  p.name            = doc["name"].as<String>();
+  p.targetTemp      = doc["targetTemp"]      | 180.0f;
+  p.maxPower        = doc["maxPower"]        | 80.0f;
+  p.kp              = doc["kp"]              | 4.0f;
+  p.cutTemp         = doc["cutTemp"]         | 195.0f;
+  p.heatupPower     = doc["heatupPower"]     | 100.0f;
+  p.headsPower      = doc["headsPower"]      | 25.0f;
+  p.headsDuration_s = doc["headsDuration_s"] | 900;
+  p.tailsTemp       = doc["tailsTemp"]       | (p.targetTemp + 4.0f);
+  p.tailsPower      = doc["tailsPower"]      | 35.0f;
+  profiles.push_back(p);
+  storage::saveProfiles();
+  S->send(200);
+}
+
+static void handleDeleteProfile() {
+  if (!S->hasArg("plain")) { S->send(400); return; }
+  StaticJsonDocument<64> doc;
+  if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
+  int idx = doc["index"] | -1;
+  if (idx < 0 || idx >= (int)profiles.size() || profiles.size() <= 1) { S->send(400); return; }
+  profiles.erase(profiles.begin() + idx);
+  if (currentProfileIndex >= (int)profiles.size()) currentProfileIndex = profiles.size() - 1;
+  storage::saveProfiles();
+  storage::saveCurrentProfileIndex(currentProfileIndex);
+  S->send(200);
+}
+
+static void handleBatch() {
+  if (S->method() == HTTP_POST) {
+    if (!S->hasArg("plain")) { S->send(400); return; }
+    StaticJsonDocument<768> doc;
+    if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
+    currentBatch.washABV = doc["washABV"] | currentBatch.washABV;
+    currentBatch.volume  = doc["volume"]  | currentBatch.volume;
+    if (doc.containsKey("unit"))        currentBatch.unit        = doc["unit"].as<String>();
+    if (doc.containsKey("ingredients")) currentBatch.ingredients = doc["ingredients"].as<String>();
+    if (doc.containsKey("notes"))       currentBatch.notes       = doc["notes"].as<String>();
+    storage::saveBatch();
+    S->send(200);
+  } else {
+    StaticJsonDocument<768> doc;
+    doc["washABV"]     = currentBatch.washABV;
+    doc["volume"]      = currentBatch.volume;
+    doc["unit"]        = currentBatch.unit;
+    doc["ingredients"] = currentBatch.ingredients;
+    doc["notes"]       = currentBatch.notes;
+    String out; serializeJson(doc, out);
+    S->send(200, "application/json", out);
+  }
+}
+
+static void handleExport() {
+  String csv = "elapsed_s,temp_f,temp_c,power_pct,est_abv,stage\n";
+  for (auto& r : sessionReadings) {
+    csv += String(r.ts / 1000) + ","
+        +  String(cToF(r.temp), 2) + ","
+        +  String(r.temp, 2) + ","
+        +  String(r.power, 1) + ","
+        +  String(r.abv, 1) + ","
+        +  stageName((Stage)r.stage) + "\n";
+  }
+  S->sendHeader("Content-Disposition", "attachment; filename=kegstill_session.csv");
+  S->send(200, "text/csv", csv);
+}
+
+static void handleWifi() {
+  if (S->method() != HTTP_POST) { S->send(405); return; }
+  if (!S->hasArg("plain")) { S->send(400); return; }
+  StaticJsonDocument<256> doc;
+  if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
+  String ssid = doc["ssid"] | "";
+  String pass = doc["pass"] | "";
+  if (ssid.length() == 0) { S->send(400); return; }
+  storage::saveWifi(ssid, pass);
+  S->send(200, "application/json", "{\"ok\":true,\"reboot\":true}");
+  delay(500);
+  ESP.restart();
+}
+
+static void handleDismissResume() {
+  resumePending = false;
+  storage::clearRunSnapshot();
+  S->send(200);
+}
+
+void web_handlers::registerRoutes(WebServer& server) {
+  S = &server;
+  server.on("/",                  handleRoot);
+  server.on("/api/status",        HTTP_GET,  handleStatus);
+  server.on("/api/start",         HTTP_POST, handleStart);
+  server.on("/api/stop",          HTTP_POST, handleStop);
+  server.on("/api/estop",         HTTP_POST, handleEStop);
+  server.on("/api/reset",         HTTP_POST, handleReset);
+  server.on("/api/power",         HTTP_POST, handlePower);
+  server.on("/api/automation",    HTTP_POST, handleAutomation);
+  server.on("/api/advance",       HTTP_POST, handleAdvanceStage);
+  server.on("/api/profiles",      HTTP_GET,  handleProfiles);
+  server.on("/api/profile/load",  HTTP_POST, handleLoadProfile);
+  server.on("/api/profile/new",   HTTP_POST, handleNewProfile);
+  server.on("/api/profile/delete",HTTP_POST, handleDeleteProfile);
+  server.on("/api/batch",         HTTP_ANY,  handleBatch);
+  server.on("/api/export",        HTTP_GET,  handleExport);
+  server.on("/api/wifi",          HTTP_POST, handleWifi);
+  server.on("/api/resume/dismiss",HTTP_POST, handleDismissResume);
+}
