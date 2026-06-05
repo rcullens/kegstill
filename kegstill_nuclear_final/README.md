@@ -23,12 +23,108 @@ kegstill_nuclear_final/
 Open the folder in Arduino IDE (file/folder name must match), select the **ESP32 Dev Module**
 board (WROOM-DA works), and Upload.
 
-## Libraries required
+## Install
 
-- **NimBLE-Arduino** (v2.x)  — `h2zero/NimBLE-Arduino`
-- **ArduinoJson** (v6.x)     — keep on v6, the code uses `StaticJsonDocument`/`createNestedObject`
-- **Preferences**, **LittleFS** (built-in with ESP32 core 2.x+)
-- **WebServer**, **WiFi**, **ArduinoOTA** (built-in)
+### 1. Install Arduino IDE 2.x
+Download from <https://www.arduino.cc/en/software> and install.
+
+### 2. Add the ESP32 board package
+1. **File → Preferences → Additional Boards Manager URLs**, paste:
+   ```
+   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+   ```
+2. **Tools → Board → Boards Manager…**, search **esp32**, install **"esp32" by Espressif Systems** (version **2.0.14 or newer** — required for LittleFS and NimBLE v2 compatibility).
+
+### 3. Install the two non-built-in libraries
+**Sketch → Include Library → Manage Libraries…**, install:
+
+| Library | Version | Why |
+|---|---|---|
+| **NimBLE-Arduino** (by h2zero) | **2.x** | BLE scan for CQ60. Code uses v2 API (`NimBLEScanCallbacks`, `const NimBLEAdvertisedDevice*`). v1.x will NOT compile. |
+| **ArduinoJson** (by Benoît Blanchon) | **6.21.x** (any 6.x) | JSON parse/build. Code uses v6 syntax (`StaticJsonDocument`, `createNestedObject`). Do **not** install v7. |
+
+Built-in (ship with the ESP32 core, no install needed): `WiFi`, `WebServer`, `ArduinoOTA`, `Preferences`, `LittleFS`, `NimBLEDevice` is the one above.
+
+### 4. Get the sketch into your Arduino sketchbook
+Either:
+- Copy the entire `kegstill_nuclear_final/` folder into your Arduino sketchbook (typically `~/Documents/Arduino/` on Mac, `Documents\Arduino\` on Windows), **or**
+- Open it in place: **File → Open…** → pick `kegstill_nuclear_final.ino`. All `.h`/`.cpp` siblings auto-load as tabs.
+
+> The **folder name must match the `.ino` filename** (`kegstill_nuclear_final`). Don't rename one without the other.
+
+### 5. Pick board + partition scheme + port
+- **Tools → Board → esp32 → ESP32 Dev Module**
+- **Tools → Flash Size → 4MB (32Mb)**
+- **Tools → Partition Scheme → "Default 4MB with spiffs (1.2MB APP/1.5MB SPIFFS)"** — required so LittleFS has somewhere to live for the run-history files. (The scheme is named "spiffs" but ESP32 LittleFS uses the same partition.)
+- **Tools → Upload Speed → 921600**
+- **Tools → Core Debug Level → None** (or "Error" for less serial spam)
+- **Tools → PSRAM → Disabled** (WROOM-DA has no PSRAM)
+- **Tools → Port →** your USB port (Mac: `/dev/cu.usbserial-*`, Linux: `/dev/ttyUSB0`, Windows: `COMx`).
+
+If the port doesn't appear, install the CP210x or CH340 USB-serial driver depending on which chip is on your board.
+
+### 6. (Optional but recommended) Set OTA password and WiFi defaults
+Open `kegstill_nuclear_final.ino` and edit:
+```cpp
+const char* WIFI_SSID_DEFAULT = "Ponderosa";
+const char* WIFI_PASS_DEFAULT = "Biggs490$!";
+const char* OTA_PASSWORD      = "kegstill";   // CHANGE THIS
+```
+The WiFi defaults are only used the first time; after that, anything saved via the UI's SYSTEM tab takes precedence (stored in NVS).
+
+### 7. First flash
+1. Plug ESP32 into USB.
+2. Click **Upload** (right-arrow icon). First build pulls a lot of dependencies — give it 1–2 minutes.
+3. Hold the **BOOT** button on the WROOM-DA if you see `Connecting……___` errors (some boards need it; many auto-reset fine).
+4. Open **Serial Monitor** at **115200 baud**. You should see:
+   ```
+   [BOOT] Keg Still GLITCH (split build)
+   [FS] LittleFS ok, 0 bytes used / 1572864 total
+   [WiFi] connecting to 'Ponderosa'
+   .......
+   [WiFi] OK ip=192.168.1.xxx rssi=-52
+   [BLE] Scan started
+   [WEB] server up
+   [READY] http://192.168.1.xxx
+   ```
+5. Open that IP in a browser on the same WiFi. You should see the GLITCH dashboard.
+
+### 8. After the first flash — OTA updates
+Once the device is on WiFi, subsequent flashes can be wireless:
+- In Arduino IDE, **Tools → Port → Network ports → kegstill-cq60 at 192.168.1.xxx**
+- Click Upload. Enter the OTA password when prompted.
+
+### 9. First-boot data behavior
+- LittleFS auto-formats on first mount (one-time, takes ~3 sec).
+- NVS is empty → seeds the 3 default profiles → saves them.
+- No run history yet → HISTORY tab shows "No saved runs yet."
+- Power slider and valve slider both start at 0.
+- Wait until the BLE pill turns **green** (CQ60 advertising detected) before clicking **DISTILL THIS SHIT!** — Start refuses without a valid probe by design.
+
+### 10. Reset to factory
+Two options:
+- **Quick:** comment out the NVS load calls in `setup()`, re-flash. Then uncomment and re-flash.
+- **Nuclear:** in Arduino IDE menu, **Tools → Erase All Flash Before Sketch Upload → Enabled**, upload once, then set it back to Disabled. Wipes NVS, LittleFS, the lot.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `'function' does not name a type` | You re-merged HTML into the `.ino`. Keep it in `index_html.h`. |
+| `NimBLEScanCallbacks does not name a type` | NimBLE-Arduino is v1.x. Upgrade to v2.x. |
+| `StaticJsonDocument is deprecated` warnings | You installed ArduinoJson v7. Downgrade to v6.21.x. |
+| `LittleFS.h: No such file` | ESP32 core older than 2.0. Upgrade core to ≥2.0.14. |
+| Compile fails with linker errors about multiple definitions | Two `.cpp` files in the sketchbook are defining the same global. Check you didn't duplicate `kegstill_nuclear_final/` somewhere else in the sketchbook. |
+| Boot loop / `Guru Meditation Error` | Usually NVS corruption from a partition scheme change. Re-flash with "Erase All Flash" once. |
+| Web UI loads but says "NO PROBE" forever | CQ60 not advertising, dead battery, or too far. Get the probe within ~5m of ESP32. Verify in Serial Monitor that BLE callbacks fire. |
+| Start button does nothing | By design — Start refuses without valid BLE. Wait for green BLE pill. |
+| Browser shows old UI | Hard-refresh (`Ctrl-Shift-R` / `Cmd-Shift-R`). Tailwind+Chart.js are cached from CDN. |
+
+## Libraries summary (recap)
+
+- **NimBLE-Arduino** v2.x — `h2zero/NimBLE-Arduino` (install via Library Manager)
+- **ArduinoJson** v6.x — Benoît Blanchon (install via Library Manager; **not** v7)
+- **WebServer**, **WiFi**, **ArduinoOTA**, **Preferences**, **LittleFS** — built into ESP32 core ≥2.0.14
 
 ## Why the split
 
