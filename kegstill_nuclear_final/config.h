@@ -6,30 +6,27 @@
 #define SSR_PIN              5     // GPIO5 -> Relay board -> Omron G3NA-240B-UTU
 #define LED_PIN              2     // onboard LED (optional)
 
-// Motorized ball valve: 2-wire DC actuator with end limit switches.
-//   VALVE_OPEN_PIN          drive OPEN direction (HIGH = motor running open)
-//   VALVE_CLOSE_PIN         drive CLOSE direction (HIGH = motor running close)
-//   VALVE_LIMIT_OPEN_PIN    input, active LOW (pull-up) when fully open
-//   VALVE_LIMIT_CLOSED_PIN  input, active LOW (pull-up) when fully closed
-// Wire the limit switches to GND through the switch with INPUT_PULLUP on the ESP32.
-// Position 0% = fully closed, 100% = fully open. Intermediate positions are
-// estimated by timing against the calibrated full-travel duration.
+// Motorized ball valve: 3-wire "smart" 9-24 VDC actuator with internal limit
+// switches (the valve cuts its own motor at end of travel). ESP32 just drives
+// two signals through relays/MOSFETs that switch the OPEN and CLOSE lines.
+//   VALVE_OPEN_PIN          drive OPEN line  (HIGH = energize OPEN winding)
+//   VALVE_CLOSE_PIN         drive CLOSE line (HIGH = energize CLOSE winding)
+// Never assert both — the firmware enforces a reverse dwell when changing
+// direction. Position is estimated purely by timing against calibrated full-
+// travel durations (no external limit-switch feedback wires).
 #define VALVE_OPEN_PIN          18
 #define VALVE_CLOSE_PIN         19
-#define VALVE_LIMIT_OPEN_PIN    34   // input-only pins 34-39 OK; use pull-up
-#define VALVE_LIMIT_CLOSED_PIN  35
 
-// Safety timing — if motor runs this long without hitting the expected limit,
-// declare FAULT. Set to ~1.5x the slowest expected full-travel for your valve.
-#define VALVE_MAX_TRAVEL_MS     45000UL
+// On boot we re-home by driving CLOSE for closeTimeMs * this multiplier; the
+// extra time is harmless because the valve's internal limit switch cuts the
+// motor when it reaches the closed stop. 1.2 = 20% safety margin.
+#define VALVE_HOMING_OVERSHOOT  1.2f
 
 // Direction-reversal dwell — both outputs LOW for this long when reversing.
-// Prevents H-bridge shoot-through and reduces motor stress.
-#define VALVE_REVERSE_DWELL_MS  100UL
+#define VALVE_REVERSE_DWELL_MS  150UL
 
-// Deadband — stop within this many % of target. Inertia after stop usually
-// adds another fraction of a percent.
-#define VALVE_DEADBAND_PCT      0.5f
+// Deadband — stop within this many % of target.
+#define VALVE_DEADBAND_PCT      1.0f
 
 // ====== TIMING ======
 const unsigned long CONTROL_PERIOD_MS  = 250;   // PID/stage update

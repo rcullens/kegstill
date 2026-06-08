@@ -226,8 +226,6 @@ static const char* valveStateName(valve::State s) {
     case valve::ST_IDLE:        return "IDLE";
     case valve::ST_OPENING:     return "OPENING";
     case valve::ST_CLOSING:     return "CLOSING";
-    case valve::ST_CAL_OPENING: return "CAL_OPEN";
-    case valve::ST_CAL_CLOSING: return "CAL_CLOSE";
     case valve::ST_FAULT:       return "FAULT";
   }
   return "?";
@@ -235,7 +233,7 @@ static const char* valveStateName(valve::State s) {
 
 static void handleValve() {
   if (!S->hasArg("plain")) { S->send(400); return; }
-  StaticJsonDocument<192> doc;
+  StaticJsonDocument<256> doc;
   if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
   if (doc.containsKey("auto")) {
     valveAutoFollowStage = doc["auto"].as<bool>();
@@ -247,13 +245,18 @@ static void handleValve() {
     valveAutoFollowStage = false;
     valve::setPosition((uint8_t)pos);
   }
+  if (doc.containsKey("openMs") && doc.containsKey("closeMs")) {
+    uint32_t openMs  = doc["openMs"]  | 0;
+    uint32_t closeMs = doc["closeMs"] | 0;
+    valve::setCalibration(openMs, closeMs);
+  }
   if (doc.containsKey("cmd")) {
     String cmd = doc["cmd"].as<String>();
-    if      (cmd == "calibrate") valve::startCalibration();
-    else if (cmd == "stop")      valve::emergencyStop();
-    else if (cmd == "clearFault")valve::clearFault();
-    else if (cmd == "open")      { valveAutoFollowStage = false; valve::setPosition(100); }
-    else if (cmd == "close")     { valveAutoFollowStage = false; valve::setPosition(0); }
+    if      (cmd == "rehome")     valve::rehome();
+    else if (cmd == "stop")       valve::emergencyStop();
+    else if (cmd == "clearFault") valve::clearFault();
+    else if (cmd == "open")       { valveAutoFollowStage = false; valve::setPosition(100); }
+    else if (cmd == "close")      { valveAutoFollowStage = false; valve::setPosition(0); }
   }
   S->send(200);
 }
@@ -261,17 +264,15 @@ static void handleValve() {
 static void handleValveStatus() {
   auto st = valve::getStatus();
   StaticJsonDocument<384> doc;
-  doc["state"]         = valveStateName(st.state);
-  doc["stateIdx"]      = (uint8_t)st.state;
-  doc["position"]      = round(st.position * 10) / 10.0;
-  doc["target"]        = st.target;
-  doc["calibrated"]    = st.calibrated;
-  doc["atOpenLimit"]   = st.atOpenLimit;
-  doc["atClosedLimit"] = st.atClosedLimit;
-  doc["openTimeMs"]    = st.openTimeMs;
-  doc["closeTimeMs"]   = st.closeTimeMs;
-  doc["faultReason"]   = st.faultReason;
-  doc["autoFollow"]    = valveAutoFollowStage;
+  doc["state"]       = valveStateName(st.state);
+  doc["stateIdx"]    = (uint8_t)st.state;
+  doc["position"]    = round(st.position * 10) / 10.0;
+  doc["target"]      = st.target;
+  doc["calibrated"]  = st.calibrated;
+  doc["openTimeMs"]  = st.openTimeMs;
+  doc["closeTimeMs"] = st.closeTimeMs;
+  doc["faultReason"] = st.faultReason;
+  doc["autoFollow"]  = valveAutoFollowStage;
   String out; serializeJson(doc, out);
   S->send(200, "application/json", out);
 }

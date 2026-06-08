@@ -104,7 +104,7 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
           <div>
             <span id="valve-value" class="text-3xl font-bold text-sky-400">0</span>
             <span class="text-zinc-400 ml-1">%</span>
-            <span id="valve-target-display" class="text-zinc-600 ml-2 text-sm">&rarr; --%</span>
+            <span id="valve-target-display" class="text-zinc-600 ml-2 text-sm"></span>
           </div>
         </div>
         <input type="range" id="valve-slider" min="0" max="100" step="1" value="0" class="w-full accent-sky-500" oninput="setValve(this.value)">
@@ -113,10 +113,7 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
             <input type="checkbox" id="valve-auto" onchange="toggleValveAuto()" class="accent-sky-500">
             <span>auto-follow stage</span>
           </label>
-          <div class="flex items-center gap-x-3">
-            <span><span id="valve-lim-closed" class="inline-block w-2 h-2 rounded-full bg-zinc-700 mr-1"></span>CLOSED</span>
-            <span><span id="valve-lim-open" class="inline-block w-2 h-2 rounded-full bg-zinc-700 mr-1"></span>OPEN</span>
-          </div>
+          <div class="text-zinc-500"><span id="valve-cal-times">Open --ms / Close --ms</span></div>
         </div>
         <div id="valve-fault-row" class="hidden mt-3 p-2 rounded-xl bg-red-950 border border-red-700 text-xs text-red-300 flex justify-between items-center">
           <span><span class="font-bold">FAULT:</span> <span id="valve-fault-msg">-</span></span>
@@ -124,11 +121,22 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
         </div>
         <div class="mt-3 grid grid-cols-4 gap-2 text-xs">
           <button onclick="valveCmd('close')" class="py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-xl">JOG CLOSE</button>
-          <button onclick="valveCmd('stop')" class="py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-xl">STOP</button>
-          <button onclick="valveCmd('open')" class="py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-xl">JOG OPEN</button>
-          <button onclick="if(confirm('Run calibration?\\nValve will drive closed -> open -> closed.'))valveCmd('calibrate')" class="py-2 bg-amber-700 hover:bg-amber-600 border border-amber-500 rounded-xl">CALIBRATE</button>
+          <button onclick="valveCmd('stop')"  class="py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-xl">STOP</button>
+          <button onclick="valveCmd('open')"  class="py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-xl">JOG OPEN</button>
+          <button onclick="valveCmd('rehome')" class="py-2 bg-amber-700 hover:bg-amber-600 border border-amber-500 rounded-xl">RE-HOME</button>
         </div>
-        <div id="valve-cal-times" class="hidden mt-2 text-[11px] text-zinc-500">Open travel: <span id="valve-open-ms">--</span>ms &middot; Close travel: <span id="valve-close-ms">--</span>ms</div>
+        <div class="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2 text-xs items-center">
+          <label class="text-zinc-500">Open time (ms)
+            <input id="valve-open-input" type="number" min="500" max="120000" step="100" value="8000" oninput="this.dataset.dirty='1'" class="w-full mt-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-1.5">
+          </label>
+          <label class="text-zinc-500">Close time (ms)
+            <input id="valve-close-input" type="number" min="500" max="120000" step="100" value="8000" oninput="this.dataset.dirty='1'" class="w-full mt-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-1.5">
+          </label>
+          <button onclick="saveValveCal()" class="px-4 py-2 mt-5 bg-emerald-700 hover:bg-emerald-600 border border-emerald-500 rounded-xl font-semibold">SAVE CAL</button>
+        </div>
+        <div class="mt-2 text-[11px] text-zinc-500">
+          To calibrate: press <strong>JOG CLOSE</strong> and wait until the valve has fully stopped. Press <strong>JOG OPEN</strong> with a stopwatch — note the time until it stops humming. That's your open time. Repeat with JOG CLOSE for close time. Type both in and SAVE CAL.
+        </div>
       </div>
 
       <div class="mt-3 grid grid-cols-2 gap-4">
@@ -584,7 +592,8 @@ function valveCmd(cmd) {
 function updateValveStatus(v) {
   if (!v) return;
   document.getElementById('valve-value').innerText = Math.round(v.position);
-  document.getElementById('valve-target-display').innerText = (v.state === 'IDLE') ? '' : ('-> ' + v.target + '%');
+  document.getElementById('valve-target-display').innerText =
+    (v.state === 'OPENING' || v.state === 'CLOSING' || v.state === 'HOMING') ? ('-> ' + v.target + '%') : '';
   var statePill = document.getElementById('valve-state-pill');
   statePill.innerText = v.state;
   statePill.className = 'ml-1 text-[10px] px-2 py-0.5 rounded-full border ' +
@@ -597,10 +606,8 @@ function updateValveStatus(v) {
     (v.calibrated ? 'bg-emerald-950 border-emerald-600 text-emerald-400'
                   : 'bg-amber-950 border-amber-700 text-amber-400');
 
-  var lc = document.getElementById('valve-lim-closed');
-  var lo = document.getElementById('valve-lim-open');
-  lc.className = 'inline-block w-2 h-2 rounded-full mr-1 ' + (v.atClosedLimit ? 'bg-emerald-400' : 'bg-zinc-700');
-  lo.className = 'inline-block w-2 h-2 rounded-full mr-1 ' + (v.atOpenLimit   ? 'bg-emerald-400' : 'bg-zinc-700');
+  document.getElementById('valve-cal-times').innerText =
+    'Open ' + v.openTimeMs + 'ms / Close ' + v.closeTimeMs + 'ms';
 
   var fault = document.getElementById('valve-fault-row');
   if (v.state === 'FAULT') {
@@ -608,16 +615,27 @@ function updateValveStatus(v) {
     document.getElementById('valve-fault-msg').innerText = v.faultReason || 'unknown';
   } else { fault.classList.add('hidden'); }
 
-  if (v.calibrated) {
-    document.getElementById('valve-cal-times').classList.remove('hidden');
-    document.getElementById('valve-open-ms').innerText  = v.openTimeMs;
-    document.getElementById('valve-close-ms').innerText = v.closeTimeMs;
-  }
+  // populate the cal inputs if user hasn't edited them
+  var oi = document.getElementById('valve-open-input');
+  var ci = document.getElementById('valve-close-input');
+  if (oi && document.activeElement !== oi && !oi.dataset.dirty) oi.value = v.openTimeMs;
+  if (ci && document.activeElement !== ci && !ci.dataset.dirty) ci.value = v.closeTimeMs;
 
   var vs = document.getElementById('valve-slider');
   if (vs && document.activeElement !== vs) vs.value = Math.round(v.position);
   var va = document.getElementById('valve-auto');
   if (va) va.checked = !!v.autoFollow;
+}
+
+function saveValveCal() {
+  var openMs  = parseInt(document.getElementById('valve-open-input').value, 10);
+  var closeMs = parseInt(document.getElementById('valve-close-input').value, 10);
+  if (!openMs || !closeMs || openMs < 500 || closeMs < 500) { alert('Times must be >= 500ms'); return; }
+  fetch('/api/valve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({openMs:openMs, closeMs:closeMs}) })
+    .then(function(){
+      document.getElementById('valve-open-input').dataset.dirty  = '';
+      document.getElementById('valve-close-input').dataset.dirty = '';
+    });
 }
 
 function switchTab(tab) {

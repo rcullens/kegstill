@@ -126,25 +126,31 @@ Two options:
 
 | Function | GPIO | Notes |
 |---|---|---|
-| SSR drive (slow-PWM, heating element) | **5** | -> relay -> Omron G3NA-240B-UTU AC SSR |
-| Valve **drive open** | **18** | -> relay/driver -> OPEN winding of 2-wire actuator |
-| Valve **drive close** | **19** | -> relay/driver -> CLOSE winding |
-| Valve **limit OPEN** (input) | **34** | active LOW, wire switch to GND. ESP32 input-only pin, `INPUT_PULLUP` set in firmware |
-| Valve **limit CLOSED** (input) | **35** | active LOW, wire switch to GND |
+| SSR drive (heating element) | **5** | -> relay -> Omron G3NA-240B-UTU AC SSR |
+| Valve **drive OPEN** | **18** | -> relay/MOSFET -> valve OPEN wire |
+| Valve **drive CLOSE** | **19** | -> relay/MOSFET -> valve CLOSE wire |
 
-Never assert OPEN and CLOSE outputs at the same time — the firmware guarantees this with a 100 ms reverse-dwell when changing direction, but make sure your driver hardware can tolerate brief overlaps anyway (use SPDT relays or a proper H-bridge).
+**3-wire ball valve (9-24 VDC, internal limit switches):**
+- COMMON wire -> + side of your 9-24 VDC supply (or AC live, if 110/220 V model)
+- OPEN wire   -> driven by GPIO 18 via a relay/MOSFET
+- CLOSE wire  -> driven by GPIO 19 via a relay/MOSFET
+- DC supply ground -> back to your relays/MOSFETs
 
-## Valve calibration
+The valve's own internal limit switches cut the motor at end of travel, so it's safe to leave a drive signal asserted past the end. The firmware uses this with a 20% overshoot margin during boot-homing and any move to 0% or 100%.
 
-Open the dashboard → press **CALIBRATE** in the BALL VALVE panel. The valve will:
-1. Drive to fully closed (home).
-2. Drive to fully open, timing the travel → `openTimeMs`.
-3. Drive back to closed, timing the travel → `closeTimeMs`.
-4. Save both to NVS.
+Never assert both OPEN and CLOSE simultaneously — the firmware enforces a 150 ms reverse-dwell, but use SPDT relays or a properly-debounced driver IC to be safe.
 
-Until calibration is done, intermediate positions use a default 10s estimate (rough). After calibration, mid-travel positions are estimated by timing against the saved durations. The pill in the valve panel shows `uncalibrated` (amber) → `CALIBRATED` (green) when done.
+## Valve calibration (manual)
 
-Both calibration values are saved to NVS and survive reboots. Re-calibrate any time the valve gets serviced, replaced, or behaves oddly.
+Since this valve has no external position feedback, you calibrate it once with a stopwatch:
+
+1. Open the dashboard. In the **BALL VALVE** panel, press **JOG CLOSE** and wait for the motor to stop (the internal limit cuts it).
+2. Press **JOG OPEN** with a stopwatch running. Stop the watch the moment the motor stops. That's your **open time** in milliseconds (e.g. 8.3 s -> `8300`).
+3. Press **JOG CLOSE** with the stopwatch. Stop when the motor stops. That's your **close time**.
+4. Type both values into the Open time / Close time fields and press **SAVE CAL**.
+5. Calibration is persisted to NVS and survives reboots. Re-calibrate any time the valve is serviced.
+
+Once calibrated, intermediate positions (e.g. 35%) are estimated by running the motor for the proportional fraction of the calibrated travel time. Re-home occasionally with the **RE-HOME** button if drift creeps in — it just drives close for `closeTimeMs + 20%` to re-zero against the internal limit.
 
 ## Libraries summary (recap)
 
