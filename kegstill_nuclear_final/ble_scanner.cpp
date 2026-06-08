@@ -193,6 +193,15 @@ void ble_scanner::begin() {
 void ble_scanner::poll() {
   static uint32_t lastPrune = 0;
   if (millis() - lastPrune > 5000) { lastPrune = millis(); pruneStale(); }
+
+  // Display staleness: if we haven't received a packet from the active
+  // probe in 5 seconds, invalidate so the dashboard goes blank rather
+  // than showing a frozen value.
+  if (bleTempValid && (millis() - lastBleUpdate > 5000)) {
+    Serial.printf("[BLE] reading went stale (%lums since last ad) — clearing bleTempValid\n",
+                  (unsigned long)(millis() - lastBleUpdate));
+    bleTempValid = false;
+  }
 }
 
 std::vector<SeenDevice> ble_scanner::snapshotSeen() {
