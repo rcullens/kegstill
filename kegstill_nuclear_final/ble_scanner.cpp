@@ -127,7 +127,22 @@ public:
     }
     upsertSeen(addr, name, rssi, cq, rawHex);
 
-    // Throttled diagnostic log so the user can sanity-check in Serial Monitor
+    // Log EVERY device that has manufacturer data on first encounter, so we
+    // can see what's nearby even if it isn't a CQ60. Helps spot the case
+    // where the probe IS advertising but with an unexpected manufacturer ID.
+    {
+      static std::vector<String> loggedAddrs;
+      bool already = false;
+      for (auto& a : loggedAddrs) if (a == addr) { already = true; break; }
+      if (!already && rawHex.length() > 0) {
+        if (loggedAddrs.size() < 32) loggedAddrs.push_back(addr);
+        Serial.printf("[BLE-NEW] %s '%s' rssi=%d mfgr=%s%s\n",
+                      addr.c_str(), name.c_str(), rssi, rawHex.c_str(),
+                      cq.valid ? "  <-- CQ60 MATCH" : "");
+      }
+    }
+
+    // Throttled diagnostic log for the active probe
     static uint32_t lastLog = 0;
     if (cq.valid && (millis() - lastLog > 2000)) {
       lastLog = millis();
