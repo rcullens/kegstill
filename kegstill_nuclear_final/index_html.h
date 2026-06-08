@@ -944,15 +944,21 @@ function loadBleScan() {
         for (var i = 0; i < 6; i++) {
           var tc = d.channels[i];
           var tf = tc * 9/5 + 32;
+          var plaus = (tc > -20 && tc < 400);
           var isSrc = (i === srcCh);
+          var border = isSrc ? 'border-amber-500 bg-amber-950/30' : (plaus ? 'border-zinc-800' : 'border-red-900 bg-red-950/20');
+          var tColor = isSrc ? 'text-amber-200' : (plaus ? 'text-zinc-300' : 'text-red-400');
           channelsHtml +=
-            '<div class="p-2 rounded-lg border ' + (isSrc ? 'border-amber-500 bg-amber-950/30' : 'border-zinc-800') + '">' +
+            '<div class="p-2 rounded-lg border ' + border + '">' +
               '<div class="text-[10px] uppercase tracking-wider ' + (isSrc ? 'text-amber-400' : 'text-zinc-500') + '">' + chNames[i] + (isSrc ? ' *' : '') + '</div>' +
-              '<div class="font-semibold ' + (isSrc ? 'text-amber-200' : 'text-zinc-300') + '">' + tf.toFixed(1) + ' F</div>' +
+              '<div class="font-semibold ' + tColor + '">' + (plaus ? tf.toFixed(1) + ' F' : 'INVALID') + '</div>' +
               '<div class="text-[10px] text-zinc-500">' + tc.toFixed(1) + ' C</div>' +
             '</div>';
         }
         channelsHtml += '</div>';
+      }
+      if (d.rawHex) {
+        channelsHtml += '<div class="mt-2 font-mono text-[10px] text-zinc-500 break-all" title="raw manufacturer data">raw: ' + d.rawHex + '</div>';
       }
 
       card.innerHTML = headerHtml + channelsHtml;

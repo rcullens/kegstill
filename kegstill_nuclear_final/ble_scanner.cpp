@@ -44,30 +44,33 @@ const char* cq60ChannelName(uint8_t ch) {
   }
 }
 
-// --- parser ---
+// --- parser (permissive: only checks mfg ID, fills what it can) ---
 CQ60Reading ble_scanner::parseCQ60(const uint8_t* data, size_t len) {
   CQ60Reading r = {};
-  if (len < 18) return r;                       // need at least through ambient-raw
+  if (len < 6) return r;                          // need at least mfgID + subtype + battery
   if (data[0] != 0xCD || data[1] != 0x05) return r;
-
-  r.battery = data[4];
+  r.battery = (len > 4) ? data[4] : 0;
   for (uint8_t i = 0; i < 6; i++) {
     size_t off = 6 + i * 2;
+    if (off + 1 >= len) { r.ch[i] = -999.0f; continue; }
     uint16_t raw = (uint16_t)data[off] | ((uint16_t)data[off + 1] << 8);
     r.ch[i] = (float)raw / 10.0f;
   }
-  // sanity: battery 0-100, at least one channel in plausible temp range
-  if (r.battery > 100) return r;
-  bool anyPlausible = false;
-  for (int i = 0; i < 6; i++) if (r.ch[i] > -20.0f && r.ch[i] < 400.0f) { anyPlausible = true; break; }
-  if (!anyPlausible) return r;
   r.valid = true;
   return r;
 }
 
+static String bytesToHex(const uint8_t* data, size_t len) {
+  static const char* H = "0123456789abcdef";
+  String s;
+  s.reserve(len * 2);
+  for (size_t i = 0; i < len; i++) { s += H[data[i] >> 4]; s += H[data[i] & 0x0F]; }
+  return s;
+}
+
 // --- seen-devices table ---
 static void upsertSeen(const String& addr, const String& name, int rssi,
-                       const CQ60Reading& cq) {
+                       const CQ60Reading& cq, const String& rawHex) {
   if (!seenMutex) return;
   xSemaphoreTake(seenMutex, portMAX_DELAY);
   SeenDevice* slot = nullptr;
@@ -86,6 +89,7 @@ static void upsertSeen(const String& addr, const String& name, int rssi,
   slot->name       = name;
   slot->rssi       = rssi;
   slot->lastSeenMs = millis();
+  slot->rawHex     = rawHex;
   if (cq.valid) {
     slot->isCQ60  = true;
     slot->hasTemp = true;
@@ -113,18 +117,32 @@ public:
     String name = dev->haveName() ? String(dev->getName().c_str()) : String("(unnamed)");
     int    rssi = dev->getRSSI();
 
+    String      rawHex;
     CQ60Reading cq = {};
     if (dev->haveManufacturerData()) {
       std::string md = dev->getManufacturerData();
-      cq = ble_scanner::parseCQ60(
-        reinterpret_cast<const uint8_t*>(md.data()), md.length());
+      const uint8_t* p = reinterpret_cast<const uint8_t*>(md.data());
+      rawHex = bytesToHex(p, md.length());
+      cq = ble_scanner::parseCQ60(p, md.length());
     }
-    upsertSeen(addr, name, rssi, cq);
+    upsertSeen(addr, name, rssi, cq, rawHex);
 
-    // is this our active probe?
+    // Throttled diagnostic log so the user can sanity-check in Serial Monitor
+    static uint32_t lastLog = 0;
+    if (cq.valid && (millis() - lastLog > 2000)) {
+      lastLog = millis();
+      Serial.printf("[CQ60] %s '%s' rssi=%d batt=%u%% chans(C): %.1f / %.1f / %.1f / %.1f / %.1f / %.1f  raw=%s\n",
+                    addr.c_str(), name.c_str(), rssi, cq.battery,
+                    cq.ch[0], cq.ch[1], cq.ch[2], cq.ch[3], cq.ch[4], cq.ch[5],
+                    rawHex.c_str());
+    }
+
+    // Auto-target: if user hasn't manually picked a MAC, accept ANY device
+    // whose manufacturer ID is 0xCD05 (CQ60). Most CQ60s advertise with an
+    // empty local name, so matching by name alone misses them.
     bool isTarget;
     if (g_target.length() > 0) isTarget = (addr == g_target);
-    else                       isTarget = (name.indexOf("CQ60") >= 0);
+    else                       isTarget = cq.valid;   // CQ60 mfg ID present
 
     if (isTarget && cq.valid) {
       uint8_t ch = g_srcCh < 6 ? g_srcCh : CQ_TIP;
@@ -134,6 +152,9 @@ public:
         bleBattery    = cq.battery;
         lastBleUpdate = millis();
         bleTempValid  = true;
+      } else {
+        Serial.printf("[CQ60] active channel %u reads %.1fC (out of range) — try a different channel\n",
+                      ch, t);
       }
     }
   }

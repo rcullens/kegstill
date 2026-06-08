@@ -341,6 +341,9 @@ static void handleBleScan() {
       for (int c = 0; c < 6; c++) { if (c) out += ","; out += String(d.ch[c], 2); }
       out += "]";
     }
+    if (d.rawHex.length() > 0) {
+      out += ",\"rawHex\":\"" + d.rawHex + "\"";
+    }
     out += ",\"ageMs\":" + String((uint32_t)(now - d.lastSeenMs));
     out += "}";
   }

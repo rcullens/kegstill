@@ -28,6 +28,7 @@ struct SeenDevice {
   bool        isCQ60;
   uint8_t     battery;    // 0 if unknown
   float       ch[6];      // last CQ60 reading per channel (only valid if isCQ60)
+  String      rawHex;     // last manufacturer-data bytes as hex (for debugging)
   uint32_t    lastSeenMs;
 };
 
