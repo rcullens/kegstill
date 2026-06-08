@@ -97,14 +97,38 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
       <!-- VALVE STRIP -->
       <div class="mt-5 metric rounded-2xl p-5 border border-zinc-700">
         <div class="flex justify-between items-baseline mb-2">
-          <div class="text-xs uppercase tracking-widest text-zinc-500">BALL VALVE</div>
-          <div><span id="valve-value" class="text-3xl font-bold text-sky-400">0</span><span class="text-zinc-400 ml-1">%</span></div>
+          <div class="text-xs uppercase tracking-widest text-zinc-500">BALL VALVE
+            <span id="valve-cal-pill" class="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700">uncalibrated</span>
+            <span id="valve-state-pill" class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700">IDLE</span>
+          </div>
+          <div>
+            <span id="valve-value" class="text-3xl font-bold text-sky-400">0</span>
+            <span class="text-zinc-400 ml-1">%</span>
+            <span id="valve-target-display" class="text-zinc-600 ml-2 text-sm">&rarr; --%</span>
+          </div>
         </div>
         <input type="range" id="valve-slider" min="0" max="100" step="1" value="0" class="w-full accent-sky-500" oninput="setValve(this.value)">
-        <label class="flex items-center gap-x-2 mt-3 cursor-pointer text-xs">
-          <input type="checkbox" id="valve-auto" onchange="toggleValveAuto()" class="accent-sky-500">
-          <span>auto-follow stage profile</span>
-        </label>
+        <div class="flex items-center justify-between mt-3 text-xs">
+          <label class="flex items-center gap-x-2 cursor-pointer">
+            <input type="checkbox" id="valve-auto" onchange="toggleValveAuto()" class="accent-sky-500">
+            <span>auto-follow stage</span>
+          </label>
+          <div class="flex items-center gap-x-3">
+            <span><span id="valve-lim-closed" class="inline-block w-2 h-2 rounded-full bg-zinc-700 mr-1"></span>CLOSED</span>
+            <span><span id="valve-lim-open" class="inline-block w-2 h-2 rounded-full bg-zinc-700 mr-1"></span>OPEN</span>
+          </div>
+        </div>
+        <div id="valve-fault-row" class="hidden mt-3 p-2 rounded-xl bg-red-950 border border-red-700 text-xs text-red-300 flex justify-between items-center">
+          <span><span class="font-bold">FAULT:</span> <span id="valve-fault-msg">-</span></span>
+          <button onclick="valveCmd('clearFault')" class="px-3 py-1 bg-red-800 hover:bg-red-700 rounded-lg text-[11px] font-semibold">CLEAR</button>
+        </div>
+        <div class="mt-3 grid grid-cols-4 gap-2 text-xs">
+          <button onclick="valveCmd('close')" class="py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-xl">JOG CLOSE</button>
+          <button onclick="valveCmd('stop')" class="py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-xl">STOP</button>
+          <button onclick="valveCmd('open')" class="py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-xl">JOG OPEN</button>
+          <button onclick="if(confirm('Run calibration?\\nValve will drive closed -> open -> closed.'))valveCmd('calibrate')" class="py-2 bg-amber-700 hover:bg-amber-600 border border-amber-500 rounded-xl">CALIBRATE</button>
+        </div>
+        <div id="valve-cal-times" class="hidden mt-2 text-[11px] text-zinc-500">Open travel: <span id="valve-open-ms">--</span>ms &middot; Close travel: <span id="valve-close-ms">--</span>ms</div>
       </div>
 
       <div class="mt-3 grid grid-cols-2 gap-4">
@@ -499,13 +523,7 @@ function updateDashboard(data) {
 
   updateStagePips(data.stageIdx);
 
-  // valve display + checkbox sync
-  document.getElementById('valve-value').innerText = data.valvePos;
-  var vs = document.getElementById('valve-slider');
-  if (vs && document.activeElement !== vs) vs.value = data.valvePos;
-  var va = document.getElementById('valve-auto');
-  if (va) va.checked = !!data.valveAuto;
-
+  // valve % comes from /api/status quickly; rich state polled separately
   if (data.status !== 'IDLE' && chart && data.tempF) pushChart(data.tempF, data.power, data.elapsed);
   var autoToggle = document.getElementById('auto-toggle');
   if (autoToggle) autoToggle.checked = data.automation;
@@ -558,6 +576,48 @@ function setValve(val) {
 function toggleValveAuto() {
   var en = document.getElementById('valve-auto').checked;
   fetch('/api/valve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({auto: en}) });
+}
+function valveCmd(cmd) {
+  fetch('/api/valve', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({cmd: cmd}) });
+}
+
+function updateValveStatus(v) {
+  if (!v) return;
+  document.getElementById('valve-value').innerText = Math.round(v.position);
+  document.getElementById('valve-target-display').innerText = (v.state === 'IDLE') ? '' : ('-> ' + v.target + '%');
+  var statePill = document.getElementById('valve-state-pill');
+  statePill.innerText = v.state;
+  statePill.className = 'ml-1 text-[10px] px-2 py-0.5 rounded-full border ' +
+    (v.state === 'FAULT' ? 'bg-red-950 border-red-600 text-red-400' :
+     (v.state === 'IDLE' ? 'bg-zinc-800 border-zinc-700' :
+      'bg-sky-950 border-sky-600 text-sky-400'));
+  var calPill = document.getElementById('valve-cal-pill');
+  calPill.innerText = v.calibrated ? 'CALIBRATED' : 'uncalibrated';
+  calPill.className = 'ml-2 text-[10px] px-2 py-0.5 rounded-full border ' +
+    (v.calibrated ? 'bg-emerald-950 border-emerald-600 text-emerald-400'
+                  : 'bg-amber-950 border-amber-700 text-amber-400');
+
+  var lc = document.getElementById('valve-lim-closed');
+  var lo = document.getElementById('valve-lim-open');
+  lc.className = 'inline-block w-2 h-2 rounded-full mr-1 ' + (v.atClosedLimit ? 'bg-emerald-400' : 'bg-zinc-700');
+  lo.className = 'inline-block w-2 h-2 rounded-full mr-1 ' + (v.atOpenLimit   ? 'bg-emerald-400' : 'bg-zinc-700');
+
+  var fault = document.getElementById('valve-fault-row');
+  if (v.state === 'FAULT') {
+    fault.classList.remove('hidden');
+    document.getElementById('valve-fault-msg').innerText = v.faultReason || 'unknown';
+  } else { fault.classList.add('hidden'); }
+
+  if (v.calibrated) {
+    document.getElementById('valve-cal-times').classList.remove('hidden');
+    document.getElementById('valve-open-ms').innerText  = v.openTimeMs;
+    document.getElementById('valve-close-ms').innerText = v.closeTimeMs;
+  }
+
+  var vs = document.getElementById('valve-slider');
+  if (vs && document.activeElement !== vs) vs.value = Math.round(v.position);
+  var va = document.getElementById('valve-auto');
+  if (va) va.checked = !!v.autoFollow;
 }
 
 function switchTab(tab) {
@@ -846,6 +906,10 @@ window.onload = function() {
   setInterval(function() {
     fetch('/api/status').then(function(r){return r.json();}).then(updateDashboard).catch(function(){});
   }, 650);
+
+  setInterval(function() {
+    fetch('/api/valve/status').then(function(r){return r.json();}).then(updateValveStatus).catch(function(){});
+  }, 500);
 
   fetch('/api/batch').then(function(r){return r.json();}).then(function(b) {
     document.getElementById('batch-abv').value = b.washABV || 10;

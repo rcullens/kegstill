@@ -122,6 +122,30 @@ Two options:
 | Start button does nothing | By design — Start refuses without valid BLE. Wait for green BLE pill. |
 | Browser shows old UI | Hard-refresh (`Ctrl-Shift-R` / `Cmd-Shift-R`). Tailwind+Chart.js are cached from CDN. |
 
+## Wiring summary
+
+| Function | GPIO | Notes |
+|---|---|---|
+| SSR drive (slow-PWM, heating element) | **5** | -> relay -> Omron G3NA-240B-UTU AC SSR |
+| Valve **drive open** | **18** | -> relay/driver -> OPEN winding of 2-wire actuator |
+| Valve **drive close** | **19** | -> relay/driver -> CLOSE winding |
+| Valve **limit OPEN** (input) | **34** | active LOW, wire switch to GND. ESP32 input-only pin, `INPUT_PULLUP` set in firmware |
+| Valve **limit CLOSED** (input) | **35** | active LOW, wire switch to GND |
+
+Never assert OPEN and CLOSE outputs at the same time — the firmware guarantees this with a 100 ms reverse-dwell when changing direction, but make sure your driver hardware can tolerate brief overlaps anyway (use SPDT relays or a proper H-bridge).
+
+## Valve calibration
+
+Open the dashboard → press **CALIBRATE** in the BALL VALVE panel. The valve will:
+1. Drive to fully closed (home).
+2. Drive to fully open, timing the travel → `openTimeMs`.
+3. Drive back to closed, timing the travel → `closeTimeMs`.
+4. Save both to NVS.
+
+Until calibration is done, intermediate positions use a default 10s estimate (rough). After calibration, mid-travel positions are estimated by timing against the saved durations. The pill in the valve panel shows `uncalibrated` (amber) → `CALIBRATED` (green) when done.
+
+Both calibration values are saved to NVS and survive reboots. Re-calibrate any time the valve gets serviced, replaced, or behaves oddly.
+
 ## Libraries summary (recap)
 
 - **NimBLE-Arduino** v2.x — `h2zero/NimBLE-Arduino` (install via Library Manager)

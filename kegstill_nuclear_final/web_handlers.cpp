@@ -218,9 +218,24 @@ static void handleDismissResume() {
 }
 
 // ---------- valve ----------
+// ---------- valve ----------
+static const char* valveStateName(valve::State s) {
+  switch (s) {
+    case valve::ST_UNKNOWN:     return "UNKNOWN";
+    case valve::ST_BOOT_HOMING: return "HOMING";
+    case valve::ST_IDLE:        return "IDLE";
+    case valve::ST_OPENING:     return "OPENING";
+    case valve::ST_CLOSING:     return "CLOSING";
+    case valve::ST_CAL_OPENING: return "CAL_OPEN";
+    case valve::ST_CAL_CLOSING: return "CAL_CLOSE";
+    case valve::ST_FAULT:       return "FAULT";
+  }
+  return "?";
+}
+
 static void handleValve() {
   if (!S->hasArg("plain")) { S->send(400); return; }
-  StaticJsonDocument<128> doc;
+  StaticJsonDocument<192> doc;
   if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
   if (doc.containsKey("auto")) {
     valveAutoFollowStage = doc["auto"].as<bool>();
@@ -229,11 +244,36 @@ static void handleValve() {
   if (doc.containsKey("pos")) {
     int pos = doc["pos"] | 0;
     if (pos < 0) pos = 0; if (pos > 100) pos = 100;
-    // manual override: turn off auto-follow if user explicitly sets position
     valveAutoFollowStage = false;
     valve::setPosition((uint8_t)pos);
   }
+  if (doc.containsKey("cmd")) {
+    String cmd = doc["cmd"].as<String>();
+    if      (cmd == "calibrate") valve::startCalibration();
+    else if (cmd == "stop")      valve::emergencyStop();
+    else if (cmd == "clearFault")valve::clearFault();
+    else if (cmd == "open")      { valveAutoFollowStage = false; valve::setPosition(100); }
+    else if (cmd == "close")     { valveAutoFollowStage = false; valve::setPosition(0); }
+  }
   S->send(200);
+}
+
+static void handleValveStatus() {
+  auto st = valve::getStatus();
+  StaticJsonDocument<384> doc;
+  doc["state"]         = valveStateName(st.state);
+  doc["stateIdx"]      = (uint8_t)st.state;
+  doc["position"]      = round(st.position * 10) / 10.0;
+  doc["target"]        = st.target;
+  doc["calibrated"]    = st.calibrated;
+  doc["atOpenLimit"]   = st.atOpenLimit;
+  doc["atClosedLimit"] = st.atClosedLimit;
+  doc["openTimeMs"]    = st.openTimeMs;
+  doc["closeTimeMs"]   = st.closeTimeMs;
+  doc["faultReason"]   = st.faultReason;
+  doc["autoFollow"]    = valveAutoFollowStage;
+  String out; serializeJson(doc, out);
+  S->send(200, "application/json", out);
 }
 
 // ---------- history ----------
@@ -326,6 +366,7 @@ void web_handlers::registerRoutes(WebServer& server) {
   server.on("/api/wifi",          HTTP_POST, handleWifi);
   server.on("/api/resume/dismiss",HTTP_POST, handleDismissResume);
   server.on("/api/valve",         HTTP_POST, handleValve);
+  server.on("/api/valve/status",  HTTP_GET,  handleValveStatus);
   server.on("/api/history",       HTTP_GET,  handleHistoryList);
   server.on("/api/history/get",   HTTP_GET,  handleHistoryGet);
   server.on("/api/history/csv",   HTTP_GET,  handleHistoryCsv);

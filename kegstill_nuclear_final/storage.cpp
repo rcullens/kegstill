@@ -183,3 +183,20 @@ String storage::loadBleTarget() {
   prefs.end();
   return a;
 }
+
+// ---------- Valve calibration ----------
+void storage::saveValveCalib(uint32_t openMs, uint32_t closeMs, bool calibrated) {
+  prefs.begin(NS, false);
+  prefs.putULong("v_open_ms",  openMs);
+  prefs.putULong("v_close_ms", closeMs);
+  prefs.putBool ("v_cal",      calibrated);
+  prefs.end();
+}
+
+void storage::loadValveCalib(uint32_t& openMs, uint32_t& closeMs, bool& calibrated) {
+  prefs.begin(NS, true);
+  openMs     = prefs.getULong("v_open_ms",  openMs);
+  closeMs    = prefs.getULong("v_close_ms", closeMs);
+  calibrated = prefs.getBool ("v_cal",      false);
+  prefs.end();
+}
