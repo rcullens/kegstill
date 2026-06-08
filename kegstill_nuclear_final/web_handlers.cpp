@@ -36,13 +36,19 @@ static void handleStatus() {
   doc["resumeElapsed"] = (uint32_t)resumeElapsedSec;
 
   if (bleTempValid) {
-    doc["tempF"] = round(cToF(currentTempC) * 10) / 10.0;
-    doc["tempC"] = round(currentTempC * 10) / 10.0;
-    doc["abv"]   = estimateABV(currentTempC);
+    doc["tempF"]   = round(cToF(currentTempC) * 10) / 10.0;
+    doc["tempC"]   = round(currentTempC * 10) / 10.0;
+    doc["abv"]     = estimateABV(currentTempC);
+    doc["battery"] = bleBattery;
+    doc["bleSrc"]  = ble_scanner::getSourceChannel();
+    doc["bleSrcName"] = cq60ChannelName(ble_scanner::getSourceChannel());
   } else {
-    doc["tempF"] = (const char*)nullptr;
-    doc["tempC"] = (const char*)nullptr;
-    doc["abv"]   = (const char*)nullptr;  // no probe = no fake ABV
+    doc["tempF"]   = (const char*)nullptr;
+    doc["tempC"]   = (const char*)nullptr;
+    doc["abv"]     = (const char*)nullptr;
+    doc["battery"] = -1;
+    doc["bleSrc"]  = ble_scanner::getSourceChannel();
+    doc["bleSrcName"] = cq60ChannelName(ble_scanner::getSourceChannel());
   }
   String out; serializeJson(doc, out);
   S->send(200, "application/json", out);
@@ -314,7 +320,11 @@ static void handleHistoryDelete() {
 static void handleBleScan() {
   auto devs = ble_scanner::snapshotSeen();
   String target = ble_scanner::getTargetAddress();
-  String out = "{\"target\":\"" + target + "\",\"devices\":[";
+  uint8_t srcCh = ble_scanner::getSourceChannel();
+  String out = "{\"target\":\"" + target + "\"";
+  out += ",\"sourceChannel\":" + String(srcCh);
+  out += ",\"sourceName\":\"" + String(cq60ChannelName(srcCh)) + "\"";
+  out += ",\"devices\":[";
   uint32_t now = millis();
   for (size_t i = 0; i < devs.size(); i++) {
     if (i) out += ",";
@@ -324,7 +334,13 @@ static void handleBleScan() {
     out += ",\"name\":\"" + esc + "\"";
     out += ",\"rssi\":" + String(d.rssi);
     out += ",\"hasTemp\":" + String(d.hasTemp ? "true" : "false");
-    if (d.hasTemp) out += ",\"tempC\":" + String(d.lastTempC, 2);
+    out += ",\"isCQ60\":" + String(d.isCQ60 ? "true" : "false");
+    if (d.isCQ60) {
+      out += ",\"battery\":" + String((int)d.battery);
+      out += ",\"channels\":[";
+      for (int c = 0; c < 6; c++) { if (c) out += ","; out += String(d.ch[c], 2); }
+      out += "]";
+    }
     out += ",\"ageMs\":" + String((uint32_t)(now - d.lastSeenMs));
     out += "}";
   }
@@ -339,6 +355,17 @@ static void handleBleSelect() {
   String addr = doc["addr"] | "";
   ble_scanner::setTargetAddress(addr);
   storage::saveBleTarget(addr);
+  S->send(200);
+}
+
+static void handleBleSource() {
+  if (!S->hasArg("plain")) { S->send(400); return; }
+  StaticJsonDocument<64> doc;
+  if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
+  int ch = doc["channel"] | -1;
+  if (ch < 0 || ch > 5) { S->send(400); return; }
+  ble_scanner::setSourceChannel((uint8_t)ch);
+  storage::saveBleSourceChannel((uint8_t)ch);
   S->send(200);
 }
 
@@ -374,5 +401,6 @@ void web_handlers::registerRoutes(WebServer& server) {
   server.on("/api/history/delete",HTTP_POST, handleHistoryDelete);
   server.on("/api/ble/scan",      HTTP_GET,  handleBleScan);
   server.on("/api/ble/select",    HTTP_POST, handleBleSelect);
+  server.on("/api/ble/source",    HTTP_POST, handleBleSource);
   server.on("/api/ble/clear",     HTTP_POST, handleBleClear);
 }

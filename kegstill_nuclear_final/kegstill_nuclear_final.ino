@@ -52,6 +52,7 @@ unsigned long windowStartTime    = 0;
 
 bool          bleTempValid  = false;
 unsigned long lastBleUpdate = 0;
+int           bleBattery    = -1;
 
 bool          resumePending     = false;
 unsigned long resumeElapsedSec  = 0;
@@ -155,6 +156,7 @@ void setup() {
 
   // BLE
   ble_scanner::begin();
+  ble_scanner::setSourceChannel(storage::loadBleSourceChannel());
   {
     String t = storage::loadBleTarget();
     if (t.length() > 0) ble_scanner::setTargetAddress(t);

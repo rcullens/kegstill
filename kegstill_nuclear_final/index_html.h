@@ -242,6 +242,21 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
         <button onclick="selectBleDevice('')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-2xl text-xs">RESET TO AUTO</button>
       </div>
 
+      <div class="mb-5 p-4 rounded-2xl border border-sky-700 bg-sky-950/30">
+        <div class="flex justify-between items-center mb-2">
+          <div class="text-xs uppercase tracking-widest text-sky-400">SENSOR CHANNEL (which probe element drives the dashboard)</div>
+        </div>
+        <select id="ble-source-select" onchange="setBleSource(this.value)" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-4 py-2 text-sm">
+          <option value="0">0 - Calc Ambient (black-end, caps ~85C - NOT for still)</option>
+          <option value="1">1 - Calc Internal (min of tip+ring1+ring2 - what the app shows)</option>
+          <option value="2" selected>2 - Tip (raw, deepest in vapor - RECOMMENDED for still)</option>
+          <option value="3">3 - Ring 1 (raw)</option>
+          <option value="4">4 - Ring 2 (raw)</option>
+          <option value="5">5 - Ambient Raw (black-end, caps ~85C - NOT for still)</option>
+        </select>
+        <div class="mt-2 text-[11px] text-zinc-400">Switch to <strong>Tip</strong> if your probe is deep in vapor; switch to <strong>Calc Internal</strong> to match the Chef iQ app exactly. Channels 0 and 5 measure the BLACK plastic end and are useless for vapor.</div>
+      </div>
+
       <div id="ble-list" class="space-y-2"></div>
       <div id="ble-empty" class="text-zinc-500 text-sm hidden">No devices advertising yet. Wait a few seconds and refresh — or wake your CQ60.</div>
     </div>
@@ -511,8 +526,15 @@ function updateDashboard(data) {
   }
 
   var blePill = document.getElementById('ble-pill');
-  if (data.bleOk) { blePill.innerText = 'BLE OK'; blePill.className = 'px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-950 border border-emerald-600 text-emerald-400'; }
-  else { blePill.innerText = 'BLE WAIT'; blePill.className = 'px-3 py-1.5 rounded-full text-xs font-semibold bg-red-950 border border-red-600 text-red-400'; }
+  if (data.bleOk) {
+    var batt = (data.battery !== undefined && data.battery >= 0) ? (' ' + data.battery + '%') : '';
+    blePill.innerText = 'CQ60' + batt;
+    blePill.className = 'px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-950 border border-emerald-600 text-emerald-400';
+    blePill.title = 'Source: ' + (data.bleSrcName || '');
+  } else {
+    blePill.innerText = 'BLE WAIT';
+    blePill.className = 'px-3 py-1.5 rounded-full text-xs font-semibold bg-red-950 border border-red-600 text-red-400';
+  }
 
   document.getElementById('power-value').innerText = Math.round(data.power);
   document.getElementById('target-temp').innerText = data.targetTemp || 180;
@@ -857,12 +879,16 @@ function viewRun(id) {
 function closeHistoryViewer() { document.getElementById('history-viewer').classList.add('hidden'); }
 
 // Hook tab switch to lazy-load history / BLE scan
+var currentTab = 0;
 var origSwitchTab = switchTab;
 switchTab = function(tab) {
   origSwitchTab(tab);
+  currentTab = tab;
   if (tab === 3) loadBleScan();
   if (tab === 5) loadHistory();
 };
+// Continuous refresh while sitting on the BLE tab (so channel temps update live).
+setInterval(function(){ if (currentTab === 3) loadBleScan(); }, 1500);
 
 // ============ BLE PROBE SCAN ============
 function rssiBars(rssi) {
@@ -877,6 +903,9 @@ function loadBleScan() {
   fetch('/api/ble/scan').then(function(r){return r.json();}).then(function(data){
     var target = data.target || '';
     document.getElementById('ble-target-display').innerText = target || '(auto - any CQ60 in range)';
+    var sel = document.getElementById('ble-source-select');
+    if (sel) sel.value = String(data.sourceChannel != null ? data.sourceChannel : 2);
+    var srcCh = data.sourceChannel;
 
     var list = document.getElementById('ble-list');
     var empty = document.getElementById('ble-empty');
@@ -886,27 +915,56 @@ function loadBleScan() {
     empty.classList.add('hidden');
     devs.sort(function(a,b){ return b.rssi - a.rssi; });
 
+    var chNames = ['CalcAmb','CalcInt','TIP','Ring1','Ring2','AmbRaw'];
+
     devs.forEach(function(d){
-      var isActive = (d.addr === target);
+      var isActive = (d.addr === target) || (!target && (d.name||'').indexOf('CQ60') >= 0);
       var ageS = Math.round(d.ageMs / 1000);
       var card = document.createElement('div');
-      card.className = 'p-4 rounded-2xl border flex justify-between items-center ' +
+      card.className = 'p-4 rounded-2xl border ' +
         (isActive ? 'border-emerald-500 bg-emerald-950/30' : 'border-zinc-700 bg-zinc-900');
-      var tempStr = d.hasTemp ? ('<span class="text-amber-400">' + (d.tempC * 9/5 + 32).toFixed(1) + ' F</span>') : '<span class="text-zinc-600">no temp data</span>';
-      card.innerHTML =
-        '<div class="min-w-0">' +
-          '<div class="font-bold truncate">' + (d.name || '(unnamed)') + '</div>' +
-          '<div class="font-mono text-xs text-zinc-400 mt-1">' + d.addr + '</div>' +
-          '<div class="text-xs mt-1">' + tempStr + ' &middot; <span class="text-zinc-500">RSSI ' + d.rssi + ' dBm &middot; ' + ageS + 's ago</span></div>' +
-        '</div>' +
-        '<button class="ml-4 px-4 py-2 rounded-xl text-xs font-semibold ' +
-          (isActive ? 'bg-emerald-700 text-emerald-100 border border-emerald-500' : 'bg-zinc-800 hover:bg-zinc-700 border border-zinc-600') +
-          '">' + (isActive ? 'TRACKING' : 'SELECT') + '</button>';
+
+      var headerHtml =
+        '<div class="flex justify-between items-start">' +
+          '<div class="min-w-0">' +
+            '<div class="font-bold truncate">' + (d.name || '(unnamed)') + (d.isCQ60 ? ' <span class="text-xs text-emerald-400">CQ60</span>' : '') + '</div>' +
+            '<div class="font-mono text-xs text-zinc-400 mt-1">' + d.addr + '</div>' +
+            '<div class="text-xs mt-1 text-zinc-500">RSSI ' + d.rssi + ' dBm &middot; ' + ageS + 's ago' +
+              (d.isCQ60 ? ' &middot; <span class="text-emerald-400">Battery ' + d.battery + '%</span>' : '') +
+            '</div>' +
+          '</div>' +
+          '<button class="ml-4 px-4 py-2 rounded-xl text-xs font-semibold ' +
+            (isActive ? 'bg-emerald-700 text-emerald-100 border border-emerald-500' : 'bg-zinc-800 hover:bg-zinc-700 border border-zinc-600') +
+            '">' + (isActive ? 'TRACKING' : 'SELECT') + '</button>' +
+        '</div>';
+
+      var channelsHtml = '';
+      if (d.isCQ60 && d.channels) {
+        channelsHtml = '<div class="grid grid-cols-3 md:grid-cols-6 gap-2 mt-3 text-xs">';
+        for (var i = 0; i < 6; i++) {
+          var tc = d.channels[i];
+          var tf = tc * 9/5 + 32;
+          var isSrc = (i === srcCh);
+          channelsHtml +=
+            '<div class="p-2 rounded-lg border ' + (isSrc ? 'border-amber-500 bg-amber-950/30' : 'border-zinc-800') + '">' +
+              '<div class="text-[10px] uppercase tracking-wider ' + (isSrc ? 'text-amber-400' : 'text-zinc-500') + '">' + chNames[i] + (isSrc ? ' *' : '') + '</div>' +
+              '<div class="font-semibold ' + (isSrc ? 'text-amber-200' : 'text-zinc-300') + '">' + tf.toFixed(1) + ' F</div>' +
+              '<div class="text-[10px] text-zinc-500">' + tc.toFixed(1) + ' C</div>' +
+            '</div>';
+        }
+        channelsHtml += '</div>';
+      }
+
+      card.innerHTML = headerHtml + channelsHtml;
       var btn = card.querySelector('button');
-      btn.onclick = function(){ if (!isActive) selectBleDevice(d.addr); };
+      btn.onclick = function(){ if (!isActive || d.addr) selectBleDevice(d.addr); };
       list.appendChild(card);
     });
   });
+}
+
+function setBleSource(ch) {
+  fetch('/api/ble/source', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({channel: parseInt(ch,10)}) }).then(loadBleScan);
 }
 
 function selectBleDevice(addr) {
@@ -923,7 +981,7 @@ window.onload = function() {
 
   setInterval(function() {
     fetch('/api/status').then(function(r){return r.json();}).then(updateDashboard).catch(function(){});
-  }, 650);
+  }, 300);
 
   setInterval(function() {
     fetch('/api/valve/status').then(function(r){return r.json();}).then(updateValveStatus).catch(function(){});

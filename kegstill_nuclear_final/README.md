@@ -152,6 +152,23 @@ Since this valve has no external position feedback, you calibrate it once with a
 
 Once calibrated, intermediate positions (e.g. 35%) are estimated by running the motor for the proportional fraction of the calibrated travel time. Re-home occasionally with the **RE-HOME** button if drift creeps in — it just drives close for `closeTimeMs + 20%` to re-zero against the internal limit.
 
+## CQ60 probe channel selection
+
+The Chef iQ CQ60 advertises **6 separate temperature channels** in each BLE packet — the packet was reverse-engineered by [@willemcvu and @Ernst79](https://github.com/custom-components/ble_monitor/issues/1279). The 6 channels are:
+
+| # | Channel | Source | Notes |
+|---|---|---|---|
+| 0 | Calc Ambient | algorithm | Caps at ~85 °C. The "ambient" reading on the black end of the probe. **NOT useful for still vapor.** |
+| 1 | Calc Internal | algorithm | `min(tip, ring1, ring2)`. What the Chef iQ app shows as "the probe temperature". |
+| 2 | **Tip** | raw sensor | **DEFAULT for still.** Sensor at the very tip of the metal probe — deepest in the vapor stream. |
+| 3 | Ring 1 | raw sensor | Slightly back from the tip. |
+| 4 | Ring 2 | raw sensor | Further back. |
+| 5 | Ambient Raw | raw sensor | The thermocouple in the black plastic end. Caps at ~85 °C. **NOT useful for still vapor.** |
+
+Choose via **BLE PROBE tab → Sensor Channel** dropdown. Selection persists across reboots.
+
+If you found this firmware was reading wildly wrong temperatures before, that's why — the previous parser was grabbing Channel 0 (kitchen-air ambient) instead of the actual vapor reading. The new parser uses the byte-exact offsets above.
+
 ## Libraries summary (recap)
 
 - **NimBLE-Arduino** v2.x — `h2zero/NimBLE-Arduino` (install via Library Manager)

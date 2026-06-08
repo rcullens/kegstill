@@ -184,6 +184,19 @@ String storage::loadBleTarget() {
   return a;
 }
 
+void storage::saveBleSourceChannel(uint8_t ch) {
+  prefs.begin(NS, false);
+  prefs.putUChar("ble_src", ch);
+  prefs.end();
+}
+
+uint8_t storage::loadBleSourceChannel() {
+  prefs.begin(NS, true);
+  uint8_t v = prefs.getUChar("ble_src", 2);   // default = TIP (channel 2)
+  prefs.end();
+  return v;
+}
+
 // ---------- Valve calibration ----------
 void storage::saveValveCalib(uint32_t openMs, uint32_t closeMs, bool calibrated) {
   prefs.begin(NS, false);

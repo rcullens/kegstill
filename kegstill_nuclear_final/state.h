@@ -74,6 +74,7 @@ extern unsigned long windowStartTime;
 
 extern bool          bleTempValid;
 extern unsigned long lastBleUpdate;
+extern int           bleBattery;          // -1 = unknown, else 0-100
 
 // resume-pending: set true at boot if NVS shows an unfinished run
 extern bool          resumePending;

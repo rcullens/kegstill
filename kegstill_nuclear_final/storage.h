@@ -32,6 +32,8 @@ namespace storage {
   // BLE target MAC (empty = auto)
   void   saveBleTarget(const String& addr);
   String loadBleTarget();
+  void    saveBleSourceChannel(uint8_t ch);
+  uint8_t loadBleSourceChannel();
 
   // Valve calibration (timed full-travel durations)
   void saveValveCalib(uint32_t openMs, uint32_t closeMs, bool calibrated);
