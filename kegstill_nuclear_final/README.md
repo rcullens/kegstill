@@ -127,8 +127,19 @@ Two options:
 | Function | GPIO | Notes |
 |---|---|---|
 | SSR drive (heating element) | **5** | -> relay -> Omron G3NA-240B-UTU AC SSR |
+| MAX31856 **CS** | **15** | chip select |
+| MAX31856 **SDI (MOSI)** | **13** | data ESP32 -> MAX31856 |
+| MAX31856 **SDO (MISO)** | **27** | data MAX31856 -> ESP32 |
+| MAX31856 **SCK** | **14** | SPI clock |
 | Valve **drive OPEN** | **18** | -> relay/MOSFET -> valve OPEN wire |
 | Valve **drive CLOSE** | **19** | -> relay/MOSFET -> valve CLOSE wire |
+
+**Thermocouple (K-type via MAX31856):**
+- Connect K-type's **yellow (+)** wire to MAX31856 `T+`
+- Connect K-type's **red (-)** wire to MAX31856 `T-`
+- 3.3 V power and GND from ESP32
+- The board's CS line idles HIGH naturally; no extra pull-up needed
+- 60 Hz mains noise filter is set in firmware. If you're in 50 Hz country, change `setNoiseFilter` in `thermocouple.cpp`.
 
 **3-wire ball valve (9-24 VDC, internal limit switches):**
 - COMMON wire -> + side of your 9-24 VDC supply (or AC live, if 110/220 V model)
@@ -171,7 +182,8 @@ If you found this firmware was reading wildly wrong temperatures before, that's 
 
 ## Libraries summary (recap)
 
-- **NimBLE-Arduino** v2.x — `h2zero/NimBLE-Arduino` (install via Library Manager)
+- **NimBLE-Arduino** v2.x — `h2zero/NimBLE-Arduino` (install via Library Manager) **— no longer required, can be removed**
+- **Adafruit MAX31856** by Adafruit — install via Library Manager (auto-pulls Adafruit BusIO)
 - **ArduinoJson** v6.x — Benoît Blanchon (install via Library Manager; **not** v7)
 - **WebServer**, **WiFi**, **ArduinoOTA**, **Preferences**, **LittleFS** — built into ESP32 core ≥2.0.14
 

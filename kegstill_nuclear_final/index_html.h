@@ -161,7 +161,7 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
       <div onclick="switchTab(0)" class="nav-tab active cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-0">PROFILES</div>
       <div onclick="switchTab(1)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-1">BATCH INFO</div>
       <div onclick="switchTab(2)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-2">CONTROLS</div>
-      <div onclick="switchTab(3)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-3">BLE PROBE</div>
+      <div onclick="switchTab(3)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-3">PROBE</div>
       <div onclick="switchTab(4)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-4">DILUTE</div>
       <div onclick="switchTab(5)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-5">HISTORY</div>
       <div onclick="switchTab(6)" class="nav-tab cursor-pointer px-8 py-3 font-semibold whitespace-nowrap" id="tab-6">SYSTEM</div>
@@ -223,42 +223,42 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
     </div>
 
     <div id="tab-content-3" class="tab-content section rounded-b-3xl p-8 hidden">
-      <div class="flex justify-between mb-6">
+      <div class="flex justify-between items-start mb-6">
         <div>
-          <div class="font-semibold text-xl">BLE Probe Selection</div>
-          <div class="text-xs text-zinc-500 mt-1">Pick which advertising device to use as the vapor probe. Selection persists across reboots.</div>
+          <div class="font-semibold text-xl">Thermocouple (MAX31856 / Type K)</div>
+          <div class="text-xs text-zinc-500 mt-1">Live status of the vapor-temperature probe. Faults trigger ESTOP during a run.</div>
         </div>
-        <div class="flex gap-x-2">
-          <button onclick="loadBleScan()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-2xl text-sm">REFRESH</button>
-          <button onclick="clearBleScan()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-2xl text-sm">CLEAR LIST</button>
+        <div id="probe-status-pill" class="px-3 py-1.5 rounded-full text-xs font-semibold bg-zinc-900 border border-zinc-700">--</div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="metric rounded-2xl p-5 border border-zinc-700">
+          <div class="text-xs uppercase tracking-widest text-zinc-500 mb-1">VAPOR TEMP</div>
+          <div class="flex items-baseline gap-x-2">
+            <span id="probe-tempF" class="text-3xl font-bold">--</span>
+            <span class="text-zinc-400">&deg;F</span>
+          </div>
+          <div id="probe-tempC" class="text-xs text-zinc-500 mt-1">-- &deg;C</div>
+        </div>
+        <div class="metric rounded-2xl p-5 border border-zinc-700">
+          <div class="text-xs uppercase tracking-widest text-zinc-500 mb-1">FAULT</div>
+          <div id="probe-fault" class="text-2xl font-bold text-emerald-400">OK</div>
+          <div id="probe-fault-detail" class="text-xs text-zinc-500 mt-1">0x00</div>
+        </div>
+        <div class="metric rounded-2xl p-5 border border-zinc-700">
+          <div class="text-xs uppercase tracking-widest text-zinc-500 mb-1">LAST READ</div>
+          <div id="probe-age" class="text-2xl font-bold">--</div>
+          <div class="text-xs text-zinc-500 mt-1">ms ago</div>
         </div>
       </div>
 
-      <div id="ble-target-row" class="mb-5 flex justify-between items-center p-4 rounded-2xl border border-amber-700 bg-amber-950/30">
-        <div>
-          <div class="text-xs uppercase tracking-widest text-amber-400">CURRENT TARGET</div>
-          <div id="ble-target-display" class="font-mono text-sm mt-1">(auto - any CQ60 in range)</div>
-        </div>
-        <button onclick="selectBleDevice('')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-2xl text-xs">RESET TO AUTO</button>
+      <div class="mt-6 text-xs text-zinc-400 space-y-1">
+        <div class="font-semibold text-zinc-300">Fault meanings:</div>
+        <div><strong>OPEN_CIRCUIT</strong> — thermocouple wires not connected or broken.</div>
+        <div><strong>OV/UV</strong> — voltage on thermocouple inputs out of range (wiring error).</div>
+        <div><strong>TC_HIGH / TC_LOW</strong> — temp outside the configured alarm range.</div>
+        <div><strong>CJ_HIGH / CJ_LOW / CJ_RANGE</strong> — cold-junction reference issue (MAX31856 chip temp).</div>
       </div>
-
-      <div class="mb-5 p-4 rounded-2xl border border-sky-700 bg-sky-950/30">
-        <div class="flex justify-between items-center mb-2">
-          <div class="text-xs uppercase tracking-widest text-sky-400">SENSOR CHANNEL (which probe element drives the dashboard)</div>
-        </div>
-        <select id="ble-source-select" onchange="setBleSource(this.value)" class="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-4 py-2 text-sm">
-          <option value="0">0 - Calc Ambient (black-end, caps ~85C - NOT for still)</option>
-          <option value="1">1 - Calc Internal (min of tip+ring1+ring2 - what the app shows)</option>
-          <option value="2" selected>2 - Tip (raw, deepest in vapor - RECOMMENDED for still)</option>
-          <option value="3">3 - Ring 1 (raw)</option>
-          <option value="4">4 - Ring 2 (raw)</option>
-          <option value="5">5 - Ambient Raw (black-end, caps ~85C - NOT for still)</option>
-        </select>
-        <div class="mt-2 text-[11px] text-zinc-400">Switch to <strong>Tip</strong> if your probe is deep in vapor; switch to <strong>Calc Internal</strong> to match the Chef iQ app exactly. Channels 0 and 5 measure the BLACK plastic end and are useless for vapor.</div>
-      </div>
-
-      <div id="ble-list" class="space-y-2"></div>
-      <div id="ble-empty" class="text-zinc-500 text-sm hidden">No devices advertising yet. Wait a few seconds and refresh — or wake your CQ60.</div>
     </div>
 
     <div id="tab-content-4" class="tab-content section rounded-b-3xl p-8 hidden">
@@ -527,12 +527,11 @@ function updateDashboard(data) {
 
   var blePill = document.getElementById('ble-pill');
   if (data.bleOk) {
-    var batt = (data.battery !== undefined && data.battery >= 0) ? (' ' + data.battery + '%') : '';
-    blePill.innerText = 'CQ60' + batt;
+    blePill.innerText = 'PROBE OK';
     blePill.className = 'px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-950 border border-emerald-600 text-emerald-400';
-    blePill.title = 'Source: ' + (data.bleSrcName || '');
+    blePill.title = '';
   } else {
-    blePill.innerText = 'BLE WAIT';
+    blePill.innerText = data.probeFault ? ('FAULT: ' + data.probeFault) : 'NO PROBE';
     blePill.className = 'px-3 py-1.5 rounded-full text-xs font-semibold bg-red-950 border border-red-600 text-red-400';
   }
 
@@ -878,107 +877,51 @@ function viewRun(id) {
 
 function closeHistoryViewer() { document.getElementById('history-viewer').classList.add('hidden'); }
 
-// Hook tab switch to lazy-load history / BLE scan
+// Hook tab switch to lazy-load history / probe status
 var currentTab = 0;
 var origSwitchTab = switchTab;
 switchTab = function(tab) {
   origSwitchTab(tab);
   currentTab = tab;
-  if (tab === 3) loadBleScan();
+  if (tab === 3) loadProbe();
   if (tab === 5) loadHistory();
 };
-// Continuous refresh while sitting on the BLE tab (so channel temps update live).
-setInterval(function(){ if (currentTab === 3) loadBleScan(); }, 1500);
+// Continuous refresh while sitting on the PROBE tab.
+setInterval(function(){ if (currentTab === 3) loadProbe(); }, 500);
 
-// ============ BLE PROBE SCAN ============
-function rssiBars(rssi) {
-  // -40 strong .. -90 weak
-  if (rssi >= -55) return 'rssi-4';
-  if (rssi >= -68) return 'rssi-3';
-  if (rssi >= -80) return 'rssi-2';
-  return 'rssi-1';
-}
-
-function loadBleScan() {
-  fetch('/api/ble/scan').then(function(r){return r.json();}).then(function(data){
-    var target = data.target || '';
-    document.getElementById('ble-target-display').innerText = target || '(auto - any CQ60 in range)';
-    var sel = document.getElementById('ble-source-select');
-    if (sel) sel.value = String(data.sourceChannel != null ? data.sourceChannel : 2);
-    var srcCh = data.sourceChannel;
-
-    var list = document.getElementById('ble-list');
-    var empty = document.getElementById('ble-empty');
-    list.innerHTML = '';
-    var devs = data.devices || [];
-    if (devs.length === 0) { empty.classList.remove('hidden'); return; }
-    empty.classList.add('hidden');
-    devs.sort(function(a,b){ return b.rssi - a.rssi; });
-
-    var chNames = ['CalcAmb','CalcInt','TIP','Ring1','Ring2','AmbRaw'];
-
-    devs.forEach(function(d){
-      var isActive = (d.addr === target) || (!target && (d.name||'').indexOf('CQ60') >= 0);
-      var ageS = Math.round(d.ageMs / 1000);
-      var card = document.createElement('div');
-      card.className = 'p-4 rounded-2xl border ' +
-        (isActive ? 'border-emerald-500 bg-emerald-950/30' : 'border-zinc-700 bg-zinc-900');
-
-      var headerHtml =
-        '<div class="flex justify-between items-start">' +
-          '<div class="min-w-0">' +
-            '<div class="font-bold truncate">' + (d.name || '(unnamed)') + (d.isCQ60 ? ' <span class="text-xs text-emerald-400">CQ60</span>' : '') + '</div>' +
-            '<div class="font-mono text-xs text-zinc-400 mt-1">' + d.addr + '</div>' +
-            '<div class="text-xs mt-1 text-zinc-500">RSSI ' + d.rssi + ' dBm &middot; ' + ageS + 's ago' +
-              (d.isCQ60 ? ' &middot; <span class="text-emerald-400">Battery ' + d.battery + '%</span>' : '') +
-            '</div>' +
-          '</div>' +
-          '<button class="ml-4 px-4 py-2 rounded-xl text-xs font-semibold ' +
-            (isActive ? 'bg-emerald-700 text-emerald-100 border border-emerald-500' : 'bg-zinc-800 hover:bg-zinc-700 border border-zinc-600') +
-            '">' + (isActive ? 'TRACKING' : 'SELECT') + '</button>' +
-        '</div>';
-
-      var channelsHtml = '';
-      if (d.isCQ60 && d.channels) {
-        channelsHtml = '<div class="grid grid-cols-3 md:grid-cols-6 gap-2 mt-3 text-xs">';
-        for (var i = 0; i < 6; i++) {
-          var tc = d.channels[i];
-          var tf = tc * 9/5 + 32;
-          var plaus = (tc > -20 && tc < 400);
-          var isSrc = (i === srcCh);
-          var border = isSrc ? 'border-amber-500 bg-amber-950/30' : (plaus ? 'border-zinc-800' : 'border-red-900 bg-red-950/20');
-          var tColor = isSrc ? 'text-amber-200' : (plaus ? 'text-zinc-300' : 'text-red-400');
-          channelsHtml +=
-            '<div class="p-2 rounded-lg border ' + border + '">' +
-              '<div class="text-[10px] uppercase tracking-wider ' + (isSrc ? 'text-amber-400' : 'text-zinc-500') + '">' + chNames[i] + (isSrc ? ' *' : '') + '</div>' +
-              '<div class="font-semibold ' + tColor + '">' + (plaus ? tf.toFixed(1) + ' F' : 'INVALID') + '</div>' +
-              '<div class="text-[10px] text-zinc-500">' + tc.toFixed(1) + ' C</div>' +
-            '</div>';
-        }
-        channelsHtml += '</div>';
-      }
-      if (d.rawHex) {
-        channelsHtml += '<div class="mt-2 font-mono text-[10px] text-zinc-500 break-all" title="raw manufacturer data">raw: ' + d.rawHex + '</div>';
-      }
-
-      card.innerHTML = headerHtml + channelsHtml;
-      var btn = card.querySelector('button');
-      btn.onclick = function(){ if (!isActive || d.addr) selectBleDevice(d.addr); };
-      list.appendChild(card);
-    });
-  });
-}
-
-function setBleSource(ch) {
-  fetch('/api/ble/source', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({channel: parseInt(ch,10)}) }).then(loadBleScan);
-}
-
-function selectBleDevice(addr) {
-  fetch('/api/ble/select', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({addr: addr}) }).then(loadBleScan);
-}
-
-function clearBleScan() {
-  fetch('/api/ble/clear', {method:'POST'}).then(loadBleScan);
+// ============ THERMOCOUPLE PROBE STATUS ============
+function loadProbe() {
+  fetch('/api/probe').then(function(r){return r.json();}).then(function(p){
+    var pill = document.getElementById('probe-status-pill');
+    if (p.valid) {
+      pill.innerText = 'ONLINE';
+      pill.className = 'px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-950 border border-emerald-600 text-emerald-400';
+    } else {
+      pill.innerText = 'FAULT';
+      pill.className = 'px-3 py-1.5 rounded-full text-xs font-semibold bg-red-950 border border-red-600 text-red-400';
+    }
+    if (p.valid) {
+      document.getElementById('probe-tempF').innerText = p.tempF.toFixed(1);
+      document.getElementById('probe-tempC').innerText = p.tempC.toFixed(2) + ' C';
+      document.getElementById('probe-tempF').className = 'text-3xl font-bold text-white';
+    } else {
+      document.getElementById('probe-tempF').innerText = '--';
+      document.getElementById('probe-tempC').innerText = '-- C';
+      document.getElementById('probe-tempF').className = 'text-3xl font-bold text-zinc-600';
+    }
+    var fEl = document.getElementById('probe-fault');
+    var fDetail = document.getElementById('probe-fault-detail');
+    if (p.fault === 0) {
+      fEl.innerText = 'OK';
+      fEl.className = 'text-2xl font-bold text-emerald-400';
+      fDetail.innerText = '0x00';
+    } else {
+      fEl.innerText = p.faultStr || 'FAULT';
+      fEl.className = 'text-2xl font-bold text-red-400';
+      fDetail.innerText = '0x' + p.fault.toString(16).padStart(2,'0').toUpperCase();
+    }
+    document.getElementById('probe-age').innerText = p.ageMs;
+  }).catch(function(){});
 }
 
 window.onload = function() {

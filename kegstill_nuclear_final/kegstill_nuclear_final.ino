@@ -14,7 +14,7 @@
 #include "config.h"
 #include "state.h"
 #include "storage.h"
-#include "ble_scanner.h"
+#include "thermocouple.h"
 #include "control.h"
 #include "web_handlers.h"
 #include "valve.h"
@@ -50,9 +50,9 @@ unsigned long lastStatusUpdate   = 0;
 unsigned long lastPersistUpdate  = 0;
 unsigned long windowStartTime    = 0;
 
-bool          bleTempValid  = false;
-unsigned long lastBleUpdate = 0;
-int           bleBattery    = -1;
+bool          bleTempValid  = false;   // "probe valid" (legacy name)
+unsigned long lastBleUpdate = 0;       // last successful probe read
+int           bleBattery    = -1;      // legacy, unused with thermocouple
 
 bool          resumePending     = false;
 unsigned long resumeElapsedSec  = 0;
@@ -154,13 +154,8 @@ void setup() {
   ArduinoOTA.setPassword(OTA_PASSWORD);
   ArduinoOTA.begin();
 
-  // BLE
-  ble_scanner::begin();
-  ble_scanner::setSourceChannel(storage::loadBleSourceChannel());
-  {
-    String t = storage::loadBleTarget();
-    if (t.length() > 0) ble_scanner::setTargetAddress(t);
-  }
+  // Thermocouple
+  thermocouple::begin();
 
   // HTTP
   web_handlers::registerRoutes(server);
@@ -174,7 +169,7 @@ void loop() {
   ArduinoOTA.handle();
   server.handleClient();
   valve::poll();
-  ble_scanner::poll();
+  thermocouple::poll();
 
   unsigned long now = millis();
 

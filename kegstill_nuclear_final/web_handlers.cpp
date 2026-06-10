@@ -6,7 +6,7 @@
 #include "control.h"
 #include "valve.h"
 #include "history.h"
-#include "ble_scanner.h"
+#include "thermocouple.h"
 #include "index_html.h"
 #include <ArduinoJson.h>
 
@@ -39,16 +39,12 @@ static void handleStatus() {
     doc["tempF"]   = round(cToF(currentTempC) * 10) / 10.0;
     doc["tempC"]   = round(currentTempC * 10) / 10.0;
     doc["abv"]     = estimateABV(currentTempC);
-    doc["battery"] = bleBattery;
-    doc["bleSrc"]  = ble_scanner::getSourceChannel();
-    doc["bleSrcName"] = cq60ChannelName(ble_scanner::getSourceChannel());
+    doc["probeFault"] = "";
   } else {
     doc["tempF"]   = (const char*)nullptr;
     doc["tempC"]   = (const char*)nullptr;
     doc["abv"]     = (const char*)nullptr;
-    doc["battery"] = -1;
-    doc["bleSrc"]  = ble_scanner::getSourceChannel();
-    doc["bleSrcName"] = cq60ChannelName(ble_scanner::getSourceChannel());
+    doc["probeFault"] = thermocouple::getFaultStr();
   }
   String out; serializeJson(doc, out);
   S->send(200, "application/json", out);
@@ -317,64 +313,16 @@ static void handleHistoryDelete() {
 }
 
 // ---------- BLE scan / select ----------
-static void handleBleScan() {
-  auto devs = ble_scanner::snapshotSeen();
-  String target = ble_scanner::getTargetAddress();
-  uint8_t srcCh = ble_scanner::getSourceChannel();
-  String out = "{\"target\":\"" + target + "\"";
-  out += ",\"sourceChannel\":" + String(srcCh);
-  out += ",\"sourceName\":\"" + String(cq60ChannelName(srcCh)) + "\"";
-  out += ",\"devices\":[";
-  uint32_t now = millis();
-  for (size_t i = 0; i < devs.size(); i++) {
-    if (i) out += ",";
-    auto& d = devs[i];
-    String esc = d.name; esc.replace("\\","\\\\"); esc.replace("\"","\\\"");
-    out += "{\"addr\":\"" + d.addr + "\"";
-    out += ",\"name\":\"" + esc + "\"";
-    out += ",\"rssi\":" + String(d.rssi);
-    out += ",\"hasTemp\":" + String(d.hasTemp ? "true" : "false");
-    out += ",\"isCQ60\":" + String(d.isCQ60 ? "true" : "false");
-    if (d.isCQ60) {
-      out += ",\"battery\":" + String((int)d.battery);
-      out += ",\"channels\":[";
-      for (int c = 0; c < 6; c++) { if (c) out += ","; out += String(d.ch[c], 2); }
-      out += "]";
-    }
-    if (d.rawHex.length() > 0) {
-      out += ",\"rawHex\":\"" + d.rawHex + "\"";
-    }
-    out += ",\"ageMs\":" + String((uint32_t)(now - d.lastSeenMs));
-    out += "}";
-  }
-  out += "]}";
+static void handleProbe() {
+  StaticJsonDocument<256> doc;
+  doc["valid"]      = thermocouple::isValid();
+  doc["tempC"]      = round(thermocouple::getTempC() * 100) / 100.0;
+  doc["tempF"]      = round((thermocouple::getTempC() * 9.0/5.0 + 32.0) * 100) / 100.0;
+  doc["fault"]      = thermocouple::getFault();
+  doc["faultStr"]   = thermocouple::getFaultStr();
+  doc["ageMs"]      = (uint32_t)(millis() - thermocouple::lastUpdateMs());
+  String out; serializeJson(doc, out);
   S->send(200, "application/json", out);
-}
-
-static void handleBleSelect() {
-  if (!S->hasArg("plain")) { S->send(400); return; }
-  StaticJsonDocument<128> doc;
-  if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
-  String addr = doc["addr"] | "";
-  ble_scanner::setTargetAddress(addr);
-  storage::saveBleTarget(addr);
-  S->send(200);
-}
-
-static void handleBleSource() {
-  if (!S->hasArg("plain")) { S->send(400); return; }
-  StaticJsonDocument<64> doc;
-  if (deserializeJson(doc, S->arg("plain")) != DeserializationError::Ok) { S->send(400); return; }
-  int ch = doc["channel"] | -1;
-  if (ch < 0 || ch > 5) { S->send(400); return; }
-  ble_scanner::setSourceChannel((uint8_t)ch);
-  storage::saveBleSourceChannel((uint8_t)ch);
-  S->send(200);
-}
-
-static void handleBleClear() {
-  ble_scanner::clearSeen();
-  S->send(200);
 }
 
 void web_handlers::registerRoutes(WebServer& server) {
@@ -402,8 +350,5 @@ void web_handlers::registerRoutes(WebServer& server) {
   server.on("/api/history/get",   HTTP_GET,  handleHistoryGet);
   server.on("/api/history/csv",   HTTP_GET,  handleHistoryCsv);
   server.on("/api/history/delete",HTTP_POST, handleHistoryDelete);
-  server.on("/api/ble/scan",      HTTP_GET,  handleBleScan);
-  server.on("/api/ble/select",    HTTP_POST, handleBleSelect);
-  server.on("/api/ble/source",    HTTP_POST, handleBleSource);
-  server.on("/api/ble/clear",     HTTP_POST, handleBleClear);
+  server.on("/api/probe",         HTTP_GET,  handleProbe);
 }

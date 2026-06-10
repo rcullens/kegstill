@@ -17,6 +17,13 @@
 #define VALVE_OPEN_PIN          18
 #define VALVE_CLOSE_PIN         19
 
+// MAX31856 K-type thermocouple amplifier (software SPI).
+// These pins avoid all current conflicts (SSR=5, valve OPEN=18, valve CLOSE=19).
+#define TC_CS_PIN               15
+#define TC_SDI_PIN              13   // MOSI: ESP32 -> MAX31856
+#define TC_SDO_PIN              27   // MISO: MAX31856 -> ESP32
+#define TC_SCK_PIN              14
+
 // On boot we re-home by driving CLOSE for closeTimeMs * this multiplier; the
 // extra time is harmless because the valve's internal limit switch cuts the
 // motor when it reaches the closed stop. 1.2 = 20% safety margin.

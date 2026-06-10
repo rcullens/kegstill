@@ -29,7 +29,7 @@ namespace storage {
   void clearRunSnapshot();     // call on clean stop / reset / estop ack
   bool loadRunSnapshot();      // sets resume* vars; returns true if a run was active
 
-  // BLE target MAC (empty = auto)
+  // BLE target MAC (empty = auto) — DEPRECATED, kept for NVS migration
   void   saveBleTarget(const String& addr);
   String loadBleTarget();
   void    saveBleSourceChannel(uint8_t ch);
