@@ -1,0 +1,209 @@
+#pragma once
+#include <Arduino.h>
+
+const char INDEX_HTML[] PROGMEM = R"HTML(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KEG STILL - MVP</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body { font-family: system-ui, sans-serif; }
+.big-num { font-size: 3.2rem; line-height: 1; font-weight: 700; }
+.section { background-color: #18181b; border: 1px solid #3f3f46; }
+.metric { background-color: #27272a; }
+</style>
+</head>
+<body class="bg-zinc-950 text-zinc-200">
+<div class="max-w-7xl mx-auto p-6">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-5xl font-bold tracking-tighter">KEG STILL</h1>
+      <p class="text-zinc-500">MVP - K-type + Ball Valve</p>
+    </div>
+    <div class="flex items-center gap-x-3">
+      <div id="probe-pill" class="px-3 py-1.5 rounded-full text-xs font-semibold bg-zinc-900 border border-zinc-700">NO PROBE</div>
+      <div id="status-pill" class="px-4 py-1.5 rounded-full text-sm font-semibold bg-zinc-900 border border-zinc-700">IDLE</div>
+      <button onclick="doEstop()" class="bg-red-600 hover:bg-red-700 px-8 py-3 rounded-2xl font-bold text-lg">E-STOP</button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div class="lg:col-span-5 section rounded-3xl p-8">
+      <div class="grid grid-cols-2 gap-6">
+        <div class="metric rounded-2xl p-6 border border-zinc-700">
+          <div class="text-xs uppercase tracking-widest text-zinc-500 mb-1">VAPOR TEMP</div>
+          <div class="flex items-baseline gap-x-2">
+            <span id="tempF" class="big-num text-zinc-600">--</span>
+            <span class="text-3xl text-zinc-400">&deg;F</span>
+          </div>
+          <div id="tempC" class="text-sm text-zinc-500 mt-1">-- &deg;C</div>
+        </div>
+        <div class="metric rounded-2xl p-6 border border-zinc-700">
+          <div class="text-xs uppercase tracking-widest text-zinc-500 mb-1">POWER</div>
+          <div class="flex items-baseline gap-x-1">
+            <span id="power" class="big-num text-white">0</span>
+            <span class="text-2xl text-zinc-400">%</span>
+          </div>
+          <input type="range" id="powerSlider" min="0" max="100" step="1" value="0" class="w-full accent-amber-500 mt-4" oninput="setPower(this.value)">
+        </div>
+        <div class="metric rounded-2xl p-6 border border-zinc-700">
+          <div class="text-xs uppercase tracking-widest text-zinc-500 mb-1">ELAPSED</div>
+          <div id="elapsed" class="big-num text-white tabular-nums">00:00</div>
+        </div>
+        <div class="metric rounded-2xl p-6 border border-zinc-700">
+          <div class="text-xs uppercase tracking-widest text-zinc-500 mb-1">PROBE FAULT</div>
+          <div id="probeFault" class="text-xl font-bold text-emerald-400 mt-2">OK</div>
+        </div>
+      </div>
+
+      <div class="mt-6 grid grid-cols-2 gap-4">
+        <button onclick="doStart()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-6 rounded-3xl text-2xl">DISTILL THIS SHIT!</button>
+        <button onclick="doStop()" class="bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 py-6 rounded-3xl font-semibold">STOP RUN</button>
+      </div>
+
+      <div class="mt-5 metric rounded-2xl p-5 border border-zinc-700">
+        <div class="flex justify-between items-baseline mb-2">
+          <div class="text-xs uppercase tracking-widest text-zinc-500">BALL VALVE
+            <span id="vStatePill" class="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 border border-zinc-700">IDLE</span>
+            <span id="vCalPill" class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-950 border border-amber-700 text-amber-400">uncalibrated</span>
+          </div>
+          <div><span id="valvePos" class="text-3xl font-bold text-sky-400">0</span><span class="text-zinc-400 ml-1">%</span></div>
+        </div>
+        <input type="range" id="valveSlider" min="0" max="100" step="1" value="0" class="w-full accent-sky-500" oninput="setValve(this.value)">
+        <div class="mt-3 grid grid-cols-4 gap-2 text-xs">
+          <button onclick="vCmd('close')" class="py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-xl">JOG CLOSE</button>
+          <button onclick="vCmd('stop')"  class="py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-xl">STOP</button>
+          <button onclick="vCmd('open')"  class="py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-xl">JOG OPEN</button>
+          <button onclick="vCmd('rehome')" class="py-2 bg-amber-700 hover:bg-amber-600 border border-amber-500 rounded-xl">RE-HOME</button>
+        </div>
+        <div class="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2 text-xs items-end">
+          <label class="text-zinc-500">Open time (ms)
+            <input id="openMs" type="number" value="3500" min="500" max="120000" oninput="this.dataset.dirty='1'" class="w-full mt-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-1.5">
+          </label>
+          <label class="text-zinc-500">Close time (ms)
+            <input id="closeMs" type="number" value="3500" min="500" max="120000" oninput="this.dataset.dirty='1'" class="w-full mt-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-1.5">
+          </label>
+          <button onclick="saveCal()" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 border border-emerald-500 rounded-xl font-semibold">SAVE CAL</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="lg:col-span-7 section rounded-3xl p-6">
+      <div class="flex justify-between mb-2 px-2">
+        <div class="font-semibold">LIVE DATA</div>
+        <div class="text-xs text-zinc-500">Temp &deg;F / Power % / Valve %</div>
+      </div>
+      <div style="position: relative; height: 480px; width: 100%; overflow: hidden;">
+        <canvas id="runChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+var chart=null, tT=[], tP=[], tV=[], tL=[];
+function initChart() {
+  chart = new Chart(document.getElementById('runChart'), {
+    type:'line',
+    data:{ labels:tL, datasets:[
+      {label:'Temp F', data:tT,borderColor:'#f59e0b',borderWidth:2,tension:0.3,yAxisID:'y',pointRadius:0},
+      {label:'Power %',data:tP,borderColor:'#64748b',borderWidth:2,tension:0.3,yAxisID:'y1',pointRadius:0},
+      {label:'Valve %',data:tV,borderColor:'#38bdf8',borderWidth:2,tension:0.3,yAxisID:'y1',pointRadius:0,borderDash:[4,4]}
+    ]},
+    options:{ responsive:true,maintainAspectRatio:false,animation:false,
+      scales:{
+        y:{position:'left',min:60,max:220,grid:{color:'#27272a'},ticks:{color:'#a1a1aa'}},
+        y1:{position:'right',min:0,max:100,grid:{drawOnChartArea:false},ticks:{color:'#a1a1aa'}},
+        x:{grid:{color:'#27272a'},ticks:{color:'#a1a1aa',maxRotation:0,autoSkip:true}}
+      },
+      plugins:{legend:{labels:{color:'#a1a1aa'}}}
+    }
+  });
+}
+function fmtTime(s){var h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
+
+function refresh(){
+  fetch('/api/status').then(function(r){return r.json();}).then(function(d){
+    var t=document.getElementById('tempF'),c=document.getElementById('tempC');
+    if(d.tempF!=null){t.innerText=d.tempF;c.innerText=d.tempC+' C';t.className='big-num text-white';}
+    else{t.innerText='--';c.innerText='-- C';t.className='big-num text-zinc-600';}
+    document.getElementById('power').innerText=Math.round(d.power);
+    document.getElementById('elapsed').innerText=fmtTime(d.elapsed||0);
+    document.getElementById('valvePos').innerText=d.valvePos;
+    var sp=document.getElementById('status-pill');
+    sp.innerText=d.status;
+    sp.className='px-4 py-1.5 rounded-full text-sm font-semibold border '+
+      (d.estop?'bg-red-950 border-red-600 text-red-400':
+       (d.status==='RUN'?'bg-emerald-950 border-emerald-600 text-emerald-400':'bg-zinc-900 border-zinc-700'));
+    var pp=document.getElementById('probe-pill');
+    if(d.bleOk){pp.innerText='PROBE OK';pp.className='px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-950 border border-emerald-600 text-emerald-400';}
+    else{pp.innerText='NO PROBE';pp.className='px-3 py-1.5 rounded-full text-xs font-semibold bg-red-950 border border-red-600 text-red-400';}
+    var ps=document.getElementById('powerSlider');
+    if(document.activeElement!==ps) ps.value=d.power;
+    var vs=document.getElementById('valveSlider');
+    if(document.activeElement!==vs) vs.value=d.valvePos;
+    if(d.tempF!=null && chart){
+      var lbl=Math.floor(d.elapsed/60)+':'+String(d.elapsed%60).padStart(2,'0');
+      tL.push(lbl);tT.push(d.tempF);tP.push(d.power);tV.push(d.valvePos);
+      if(tL.length>360){tL.shift();tT.shift();tP.shift();tV.shift();}
+      chart.update('none');
+    }
+  }).catch(function(){});
+}
+
+function refreshProbe(){
+  fetch('/api/probe').then(function(r){return r.json();}).then(function(p){
+    var el=document.getElementById('probeFault');
+    if(p.fault===0){el.innerText='OK';el.className='text-xl font-bold text-emerald-400 mt-2';}
+    else{el.innerText=p.faultStr||'FAULT';el.className='text-xl font-bold text-red-400 mt-2';}
+  }).catch(function(){});
+}
+
+function refreshValve(){
+  fetch('/api/valve/status').then(function(r){return r.json();}).then(function(v){
+    var sp=document.getElementById('vStatePill');
+    sp.innerText=v.state;
+    sp.className='ml-2 text-[10px] px-2 py-0.5 rounded-full border '+
+      (v.state==='IDLE'?'bg-zinc-800 border-zinc-700':'bg-sky-950 border-sky-600 text-sky-400');
+    var cp=document.getElementById('vCalPill');
+    cp.innerText=v.calibrated?'CALIBRATED':'uncalibrated';
+    cp.className='ml-1 text-[10px] px-2 py-0.5 rounded-full border '+
+      (v.calibrated?'bg-emerald-950 border-emerald-600 text-emerald-400':'bg-amber-950 border-amber-700 text-amber-400');
+    var oi=document.getElementById('openMs'),ci=document.getElementById('closeMs');
+    if(document.activeElement!==oi && !oi.dataset.dirty) oi.value=v.openTimeMs;
+    if(document.activeElement!==ci && !ci.dataset.dirty) ci.value=v.closeTimeMs;
+  }).catch(function(){});
+}
+
+function setPower(v){document.getElementById('power').innerText=Math.round(v);
+  fetch('/api/power',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({power:parseFloat(v)})});}
+function setValve(v){fetch('/api/valve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pos:parseInt(v,10)})});}
+function vCmd(c){fetch('/api/valve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:c})});}
+function saveCal(){
+  var o=parseInt(document.getElementById('openMs').value,10);
+  var c=parseInt(document.getElementById('closeMs').value,10);
+  fetch('/api/valve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({openMs:o,closeMs:c})}).then(function(){
+    document.getElementById('openMs').dataset.dirty='';
+    document.getElementById('closeMs').dataset.dirty='';
+  });
+}
+function doStart(){fetch('/api/start',{method:'POST'}).then(function(r){if(!r.ok)r.text().then(function(t){alert('Cannot start: '+t);});});
+  tL=[];tT=[];tP=[];tV=[];
+  if(chart){chart.data.labels=tL;chart.data.datasets[0].data=tT;chart.data.datasets[1].data=tP;chart.data.datasets[2].data=tV;chart.update();}}
+function doStop(){fetch('/api/stop',{method:'POST'});}
+function doEstop(){if(confirm('E-STOP the still?'))fetch('/api/estop',{method:'POST'});}
+
+window.onload=function(){
+  initChart();
+  setInterval(refresh,300);
+  setInterval(refreshProbe,1000);
+  setInterval(refreshValve,500);
+};
+</script>
+</body>
+</html>
+)HTML";
