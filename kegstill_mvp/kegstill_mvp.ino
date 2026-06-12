@@ -25,6 +25,9 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <Adafruit_MAX31856.h>
+#include <esp_bt.h>
+#include <esp_wifi.h>
+#include <rom/rtc.h>
 #include "index_html.h"
 
 // ------------------------- pins -------------------------
@@ -592,10 +595,25 @@ void handleHistoryClear() { historyClear(); server.send(200); }
 
 // ------------------------- setup / loop -----------------
 void setup() {
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+  // KEEP brownout detector ON so we can see if the chip is actually browning out.
+  // (Disabling it just hides the crash - chip still goes unstable.)
+  // WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);   // <-- intentionally NOT disabled
   Serial.begin(115200);
   delay(500);
   Serial.println("\n[BOOT] Keg Still - Glitch Edition");
+  Serial.printf("[BOOT] reset reason cpu0=%d cpu1=%d\n",
+                rtc_get_reset_reason(0), rtc_get_reset_reason(1));
+
+  // Cut baseline current BEFORE the radio wakes up:
+  //   * Bluetooth controller off (saves ~30 mA + huge inrush)
+  //   * CPU down to 80 MHz (saves ~25 mA)
+  //   * WiFi NVS writes off (no flash storms during connect)
+  btStop();
+  esp_bt_controller_disable();
+  esp_bt_controller_deinit();
+  setCpuFrequencyMhz(80);
+  WiFi.persistent(false);
+  Serial.printf("[BOOT] cpu=%lu MHz, bt=off\n", (unsigned long)getCpuFrequencyMhz());
 
   pinMode(SSR_PIN, OUTPUT);          digitalWrite(SSR_PIN, LOW);
   pinMode(VALVE_OPEN_PIN, OUTPUT);   digitalWrite(VALVE_OPEN_PIN, LOW);
@@ -622,22 +640,43 @@ void setup() {
   tc->setNoiseFilter(MAX31856_NOISE_FILTER_60HZ);
   tc->setConversionMode(MAX31856_CONTINUOUS);
 
-  // wifi (low TX, no sleep)
-  Serial.println("[WiFi] pre-begin");
+  // ----- WiFi -----
+  // Give the 3V3 rail a full second to settle after TC init.
+  Serial.println("[WiFi] pre-begin (settling 1500ms)");
+  Serial.flush();
+  delay(1500);
+
+  // Init the driver explicitly so we can set TX power BEFORE the radio is keyed up.
+  Serial.println("[WiFi] esp_netif_init");
+  Serial.flush();
+  WiFi.mode(WIFI_OFF);
+  delay(200);
+  Serial.println("[WiFi] WIFI_OFF set, going STA");
+  Serial.flush();
   WiFi.mode(WIFI_STA);
   delay(500);
-  Serial.println("[WiFi] mode set");
-  WiFi.setTxPower(WIFI_POWER_8_5dBm);
-  Serial.println("[WiFi] tx power set");
-  WiFi.setSleep(false);
+  Serial.println("[WiFi] STA mode set");
+  Serial.flush();
+
+  // Lowest legal TX power = 2 dBm -> smallest possible RF current spike.
+  WiFi.setTxPower(WIFI_POWER_2dBm);
+  Serial.println("[WiFi] tx power 2dBm");
+  Serial.flush();
+
+  WiFi.setSleep(true);   // allow modem sleep between packets (lower avg current)
   WiFi.begin(SSID, PASS);
   Serial.printf("[WiFi] connecting to '%s'", SSID);
+  Serial.flush();
   uint32_t t0 = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - t0 < 30000) { delay(400); Serial.print('.'); }
   Serial.println();
-  if (WiFi.status() != WL_CONNECTED) { Serial.println("[WiFi] FAILED - reboot"); delay(3000); ESP.restart(); }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.printf("[WiFi] FAILED status=%d - reboot in 5s\n", WiFi.status());
+    delay(5000);
+    ESP.restart();
+  }
   Serial.printf("[WiFi] OK ip=%s rssi=%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
-  delay(1000);
+  delay(500);
 
   // routes
   server.on("/",                 handleRoot);
