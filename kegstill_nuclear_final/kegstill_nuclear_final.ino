@@ -1,6 +1,6 @@
 /*
   KEG STILL - GLITCH EDITION - SPLIT BUILD
-  STABILITY PATCH v3.2 (The 'Weak Power' Defense)
+  STABILITY PATCH v3.3 (The 'Health Monitor' Defense)
 */
 
 #include <Arduino.h>
@@ -88,16 +88,16 @@ static bool connectWiFi() {
     ssid = WIFI_SSID_DEFAULT; pass = WIFI_PASS_DEFAULT;
   }
 
-  Serial.println("[WiFi] Entering STA Mode..."); Serial.flush();
+  Serial.println("[WiFi] Initializing STA Mode (STEALTH POWER)... "); Serial.flush();
   WiFi.mode(WIFI_STA);
   WiFi.persistent(false);
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(false); 
 
-  // ABSOLUTE MINIMUM POWER (8.5dBm) - IF IT STILL BROWNS OUT, YOUR POWER IS TRASH
-  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+  // ULTIMATE STEALTH POWER (5dBm) - BARELY ALIVE BUT STABLE
+  WiFi.setTxPower(WIFI_POWER_5dBm);
 
-  Serial.printf("[WiFi] Connecting to '%s' (LOW POWER MODE)...", ssid.c_str()); Serial.flush();
+  Serial.printf("[WiFi] Connecting to '%s' (TX Power: 5dBm)...", ssid.c_str()); Serial.flush();
   WiFi.begin(ssid.c_str(), pass.c_str());
   
   unsigned long t0 = millis();
@@ -109,12 +109,11 @@ static bool connectWiFi() {
 }
 
 void setup() {
-  // KILL RADIO ON BOOT TO SAVE POWER
   WiFi.mode(WIFI_OFF);
   
   Serial.begin(115200);
-  delay(2000); 
-  Serial.println("\n[BOOT] Keg Still GLITCH (v3.2 - ULTIMATE STABILITY)");
+  delay(3000); 
+  Serial.println("\n[BOOT] Keg Still GLITCH (v3.3 - HEALTH MONITOR)");
   Serial.printf("[BOOT] Reset CPU0: %d, CPU1: %d\n", rtc_get_reset_reason(0), rtc_get_reset_reason(1));
   Serial.flush();
 
@@ -137,16 +136,16 @@ void setup() {
   Serial.println("[SYS] Init Thermocouple..."); Serial.flush();
   thermocouple::begin();
 
-  // EXPERIMENTAL: 30 SECOND DELAY TO LET YOU SEE THE SENSOR BEFORE WIFI KILLS IT
-  Serial.println("\n[TEST] STANDBY FOR 30 SECONDS... WATCH FOR BROWNOUTS!");
+  Serial.println("\n[HEALTH CHECK] STANDBY FOR 30s COUNTDOWN...");
   for(int i=30; i>0; i--) {
-    Serial.printf("[TEST] Radio keys up in %d seconds... Temp: %.2fC\n", i, currentTempC);
+    Serial.printf("[HEALTH] T-%ds | Temp: %.2fC | Heap: %d | Hall: %d\n", 
+                  i, currentTempC, ESP.getFreeHeap(), hallRead());
     Serial.flush();
     thermocouple::poll();
     delay(1000);
   }
 
-  Serial.println("\n[SYS] STARTING WIFI RADIO NOW - GOOD LUCK..."); Serial.flush();
+  Serial.println("\n[SYS] ENGAGING WIFI RADIO (5dBm STEALTH MODE)... GOOD LUCK."); Serial.flush();
   if (connectWiFi()) {
     Serial.printf("[WiFi] OK ip=%s\n", WiFi.localIP().toString().c_str());
   } else {
