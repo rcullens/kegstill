@@ -8,8 +8,6 @@
     * 3-wire valve driver (time-based, no limit switches)
     * Profile system saved to NVS (Preferences.h)
     * 4-stage automation: WARMUP -> HEADS -> HEARTS -> TAILS -> DONE
-        - Each stage has temp trigger, power %, valve %, optional max-minutes
-        - Auto-shutoff at top-of-tails temp
     * In-RAM run history (720 samples @ 10s = 2h) - exportable as CSV
     * Dilution calculator (client-side JS)
 
@@ -51,6 +49,7 @@ const float         MAX_TC_C         = 105.0f;
 const unsigned long DWELL_MS         = 150;
 const unsigned long HISTORY_PERIOD_MS = 10000;
 const uint16_t      HISTORY_SAMPLES  = 720;   // 2h @ 10s
+const unsigned long WIFI_RECONNECT_MS = 10000;
 
 // ------------------------- state ------------------------
 WebServer server(80);
@@ -593,92 +592,75 @@ void handleHistoryCsv() {
 
 void handleHistoryClear() { historyClear(); server.send(200); }
 
+// ------------------------- wifi monitor -----------------
+void wifiPoll() {
+  static uint32_t lastCheck = 0;
+  if (millis() - lastCheck < WIFI_RECONNECT_MS) return;
+  lastCheck = millis();
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[WiFi] connection lost! Attempting recovery...");
+    WiFi.begin(SSID, PASS);
+  }
+}
+
 // ------------------------- setup / loop -----------------
 void setup() {
-  // KEEP brownout detector ON so we can see if the chip is actually browning out.
-  // (Disabling it just hides the crash - chip still goes unstable.)
-  // WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);   // <-- intentionally NOT disabled
   Serial.begin(115200);
   delay(500);
-  Serial.println("\n[BOOT] Keg Still - Glitch Edition");
+  Serial.println("\n[BOOT] Keg Still - Glitch Edition (GOD MODE WiFi Patch)");
   Serial.printf("[BOOT] reset reason cpu0=%d cpu1=%d\n",
                 rtc_get_reset_reason(0), rtc_get_reset_reason(1));
 
-  // Cut baseline current BEFORE the radio wakes up:
-  //   * Bluetooth controller off (saves ~30 mA + huge inrush)
-  //   * CPU down to 80 MHz (saves ~25 mA)
-  //   * WiFi NVS writes off (no flash storms during connect)
   btStop();
   esp_bt_controller_disable();
   esp_bt_controller_deinit();
   setCpuFrequencyMhz(80);
-  WiFi.persistent(false);
-  Serial.printf("[BOOT] cpu=%lu MHz, bt=off\n", (unsigned long)getCpuFrequencyMhz());
-
+  
   pinMode(SSR_PIN, OUTPUT);          digitalWrite(SSR_PIN, LOW);
   pinMode(VALVE_OPEN_PIN, OUTPUT);   digitalWrite(VALVE_OPEN_PIN, LOW);
   pinMode(VALVE_CLOSE_PIN, OUTPUT);  digitalWrite(VALVE_CLOSE_PIN, LOW);
 
-  // load profile + valve cal from NVS
   profileLoad();
-  Serial.printf("[NVS] profile='%s' vOpen=%lu vClose=%lu cal=%d\n",
-                g_profile.name, (unsigned long)g_vOpenMs, (unsigned long)g_vCloseMs, g_vCalibrated);
-
+  
   // valve home on boot
-  Serial.println("[VALVE] homing closed...");
   digitalWrite(VALVE_CLOSE_PIN, HIGH);
   delay(g_vCloseMs * 12 / 10);
   digitalWrite(VALVE_CLOSE_PIN, LOW);
   g_vPos = 0;
-  Serial.println("[VALVE] homed");
 
-  // thermocouple - dynamic alloc
   tc = new Adafruit_MAX31856(TC_CS_PIN, TC_SDI_PIN, TC_SDO_PIN, TC_SCK_PIN);
-  if (!tc->begin()) Serial.println("[TC] init FAILED - check SPI wires");
-  else              Serial.println("[TC] init OK");
-  tc->setThermocoupleType(MAX31856_TCTYPE_K);
-  tc->setNoiseFilter(MAX31856_NOISE_FILTER_60HZ);
-  tc->setConversionMode(MAX31856_CONTINUOUS);
-
-  // ----- WiFi -----
-  // Give the 3V3 rail a full second to settle after TC init.
-  Serial.println("[WiFi] pre-begin (settling 1500ms)");
-  Serial.flush();
-  delay(1500);
-
-  // Init the driver explicitly so we can set TX power BEFORE the radio is keyed up.
-  Serial.println("[WiFi] esp_netif_init");
-  Serial.flush();
-  WiFi.mode(WIFI_OFF);
-  delay(200);
-  Serial.println("[WiFi] WIFI_OFF set, going STA");
-  Serial.flush();
-  WiFi.mode(WIFI_STA);
-  delay(500);
-  Serial.println("[WiFi] STA mode set");
-  Serial.flush();
-
-  // Lowest legal TX power = 2 dBm -> smallest possible RF current spike.
-  WiFi.setTxPower(WIFI_POWER_2dBm);
-  Serial.println("[WiFi] tx power 2dBm");
-  Serial.flush();
-
-  WiFi.setSleep(true);   // allow modem sleep between packets (lower avg current)
-  WiFi.begin(SSID, PASS);
-  Serial.printf("[WiFi] connecting to '%s'", SSID);
-  Serial.flush();
-  uint32_t t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 30000) { delay(400); Serial.print('.'); }
-  Serial.println();
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("[WiFi] FAILED status=%d - reboot in 5s\n", WiFi.status());
-    delay(5000);
-    ESP.restart();
+  if (tc->begin()) {
+    tc->setThermocoupleType(MAX31856_TCTYPE_K);
+    tc->setNoiseFilter(MAX31856_NOISE_FILTER_60HZ);
+    tc->setConversionMode(MAX31856_CONTINUOUS);
   }
-  Serial.printf("[WiFi] OK ip=%s rssi=%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
-  delay(500);
 
-  // routes
+  // ----- WiFi ----- 
+  WiFi.mode(WIFI_STA);
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false); // NO MODEM SLEEP - stay awake and stick to the signal
+  
+  // MAX POWER - blast the radio at 19.5dBm
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);
+  
+  Serial.printf("[WiFi] connecting to '%s' (TX Power: 19.5dBm, Sleep: OFF)\n", SSID);
+  WiFi.begin(SSID, PASS);
+
+  uint32_t t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
+    delay(250);
+    Serial.print('.');
+  }
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("[WiFi] OK ip=%s rssi=%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+  } else {
+    Serial.println("[WiFi] Initial connect FAILED - will retry in loop");
+  }
+
   server.on("/",                 handleRoot);
   server.on("/api/status",       HTTP_GET,  handleStatus);
   server.on("/api/probe",        HTTP_GET,  handleProbe);
@@ -697,14 +679,18 @@ void setup() {
   server.on("/api/history.csv",  HTTP_GET,  handleHistoryCsv);
   server.on("/api/history",      HTTP_DELETE, handleHistoryClear);
   server.begin();
-  Serial.printf("[READY] http://%s\n", WiFi.localIP().toString().c_str());
 }
 
 void loop() {
+  wifiPoll();
   server.handleClient();
   tcPoll();
   valvePoll();
   static uint32_t lastCtrl = 0;
-  if (millis() - lastCtrl > 100) { lastCtrl = millis(); controlPoll(); automationPoll(); }
+  if (millis() - lastCtrl > 100) {
+    lastCtrl = millis();
+    controlPoll();
+    automationPoll();
+  }
   historyPoll();
 }
