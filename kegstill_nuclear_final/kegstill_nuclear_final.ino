@@ -1,12 +1,13 @@
 /*
   KEG STILL - GLITCH EDITION - SPLIT BUILD
-  STABILITY PATCH v2.0
+  EXORCIST PATCH v3.0
 */
 
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <ArduinoOTA.h>
+#include <rom/rtc.h>
 
 #include "config.h"
 #include "state.h"
@@ -87,33 +88,42 @@ static bool connectWiFi() {
     ssid = WIFI_SSID_DEFAULT; pass = WIFI_PASS_DEFAULT;
   }
 
+  Serial.printf("[WiFi] Init STA Mode...\n"); Serial.flush();
   WiFi.mode(WIFI_STA);
   WiFi.persistent(false);
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(false); 
 
-  // Stabilize at 15dBm to prevent brownout during TX peaks
-  WiFi.setTxPower(WIFI_POWER_15dBm);
+  // MINIMAL POWER (10dBm) TO STOP BROWNOUT DURING BOOT
+  WiFi.setTxPower(WIFI_POWER_10dBm);
 
-  Serial.printf("[WiFi] connecting to '%s' (TX: 15dBm)\n", ssid.c_str());
+  Serial.printf("[WiFi] connecting to '%s' (TX: 10dBm)...", ssid.c_str()); Serial.flush();
   WiFi.begin(ssid.c_str(), pass.c_str());
   
   unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
-    delay(500); Serial.print('.');
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 10000) {
+    delay(500); Serial.print('.'); Serial.flush();
   }
   Serial.println();
   return (WiFi.status() == WL_CONNECTED);
 }
 
 void setup() {
+  // DISABLE WIFI IMMEDIATELY ON BOOT TO SAVE POWER
+  WiFi.mode(WIFI_OFF);
+  
   Serial.begin(115200);
-  delay(2000); // Massive delay to let power rail settle
-  Serial.println("\n[BOOT] Keg Still GLITCH (STABILITY PATCH v2.0)");
+  delay(3000); 
+  Serial.println("\n[BOOT] Keg Still GLITCH (EXORCIST PATCH v3.0)");
+  Serial.printf("[BOOT] Reset CPU0: %d, CPU1: %d\n", rtc_get_reset_reason(0), rtc_get_reset_reason(1));
+  Serial.flush();
 
-  storage::begin(); // Mount FS first
+  Serial.println("[SYS] Mounting Filesystem..."); Serial.flush();
+  storage::begin(); 
+
+  Serial.println("[SYS] Init Control/Valve/History..."); Serial.flush();
   control::begin();
-  valve::begin();   // Auto-homing DISABLED here
+  valve::begin();   
   history::begin();
 
   if (!storage::loadProfiles()) {
@@ -124,21 +134,26 @@ void setup() {
   storage::loadBatch();
   storage::loadRunSnapshot();
 
-  // WiFi init
+  Serial.println("[SYS] Starting WiFi subsystem..."); Serial.flush();
   if (connectWiFi()) {
     Serial.printf("[WiFi] OK ip=%s\n", WiFi.localIP().toString().c_str());
   } else {
-    Serial.println("[WiFi] Failed to connect - loop will retry");
+    Serial.println("[WiFi] Connection FAILED (will retry in loop)");
   }
+  Serial.flush();
 
   ArduinoOTA.setHostname(OTA_HOSTNAME);
   ArduinoOTA.setPassword(OTA_PASSWORD);
   ArduinoOTA.begin();
 
+  Serial.println("[SYS] Init Thermocouple..."); Serial.flush();
   thermocouple::begin();
+  
+  Serial.println("[SYS] Starting Web Server..."); Serial.flush();
   web_handlers::registerRoutes(server);
   server.begin();
-  Serial.println("[WEB] server up");
+
+  Serial.printf("[READY] http://%s\n", WiFi.localIP().toString().c_str()); Serial.flush();
 }
 
 void loop() {
@@ -148,8 +163,8 @@ void loop() {
   thermocouple::poll();
 
   unsigned long now = millis();
-  if (WiFi.status() != WL_CONNECTED && (now % 10000 < 50)) {
-    Serial.println("[WiFi] re-connecting...");
+  if (WiFi.status() != WL_CONNECTED && (now % 15000 < 50)) {
+    Serial.println("[WiFi] Status lost, background retry...");
     WiFi.begin();
   }
 
