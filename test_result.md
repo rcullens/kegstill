@@ -101,3 +101,114 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+user_problem_statement: "Debug the kegstill app from errors - backend focus"
+
+backend:
+  - task: "Server startup - environment variables"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: "CRITICAL BUG FOUND: server.py used os.environ['MONGO_URL'] and os.environ['DB_NAME'] which crash with KeyError if env vars are missing and no .env file exists. Fixed to use os.environ.get() with sensible defaults (mongodb://localhost:27017 and 'kegstill'). Also created backend/.env file with proper values."
+        - working: true
+          agent: "testing"
+          comment: "After fix, server starts cleanly with or without explicit env vars. GET /api/ returns 200 OK."
+
+  - task: "Deprecated on_event handler"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: false
+          agent: "testing"
+          comment: "FastAPI 0.110.1 emits DeprecationWarning for @app.on_event('shutdown'). Replaced with asynccontextmanager lifespan pattern per FastAPI docs."
+        - working: true
+          agent: "testing"
+          comment: "After rewrite, zero deprecation warnings. Lifespan handler properly closes MongoDB connection on shutdown."
+
+  - task: "POST /api/status endpoint"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Creates status check in MongoDB, returns proper JSON with id, client_name, timestamp. Validates input correctly (returns 422 for missing fields or invalid JSON)."
+
+  - task: "GET /api/status endpoint"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Returns list of all status checks from MongoDB. Properly handles ISO string to datetime conversion. Excludes MongoDB _id field."
+
+  - task: "CORS middleware"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "CORS configured to allow all origins by default (CORS_ORIGINS env var, defaults to '*'). Frontend should be able to reach backend cross-origin."
+
+metadata:
+  created_by: "testing_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Server startup - environment variables"
+    - "Deprecated on_event handler"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "testing"
+      message: |
+        BACKEND DEBUG SUMMARY:
+        
+        BUGS FOUND AND FIXED:
+        1. CRITICAL: Missing .env file + hard crash on missing MONGO_URL/DB_NAME env vars.
+           - server.py line 18-20 used os.environ['MONGO_URL'] which throws KeyError.
+           - FIX: Changed to os.environ.get() with defaults + created .env file.
+        
+        2. DEPRECATION: @app.on_event("shutdown") is deprecated in FastAPI 0.110.1.
+           - FIX: Replaced with asynccontextmanager lifespan pattern.
+        
+        3. MINOR: Logging was configured AFTER app creation (cosmetic, but startup logs missed).
+           - FIX: Moved logging config before app instantiation.
+        
+        ALL ENDPOINTS TESTED AND WORKING:
+        - GET /api/ -> 200 {"message": "Hello World"}
+        - POST /api/status -> 200 (creates record)
+        - GET /api/status -> 200 (returns all records)
+        - Invalid input -> 422 (proper validation)
+        - Unknown routes -> 404
+        
+        NOTE: The actual kegstill app logic lives in ESP32 Arduino firmware
+        (kegstill_mvp/kegstill_mvp.ino). The FastAPI backend is just a scaffold/
+        boilerplate. The real "app" is the embedded firmware + its built-in web server.
+        If the user's "errors" are in the Arduino code, that cannot be tested here
+        (requires physical hardware). The frontend (React) connects to this backend.
