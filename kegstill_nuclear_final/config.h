@@ -6,49 +6,35 @@
 #define SSR_PIN              5     // GPIO5 -> Relay board -> Omron G3NA-240B-UTU
 #define LED_PIN              2     // onboard LED (optional)
 
-// Motorized ball valve: 3-wire "smart" 9-24 VDC actuator with internal limit
-// switches (the valve cuts its own motor at end of travel). ESP32 just drives
-// two signals through relays/MOSFETs that switch the OPEN and CLOSE lines.
-//   VALVE_OPEN_PIN          drive OPEN line  (HIGH = energize OPEN winding)
-//   VALVE_CLOSE_PIN         drive CLOSE line (HIGH = energize CLOSE winding)
-// Never assert both — the firmware enforces a reverse dwell when changing
-// direction. Position is estimated purely by timing against calibrated full-
-// travel durations (no external limit-switch feedback wires).
+// Motorized ball valve
 #define VALVE_OPEN_PIN          18
 #define VALVE_CLOSE_PIN         19
 
 // MAX31856 K-type thermocouple amplifier (software SPI).
-// These pins avoid all current conflicts (SSR=5, valve OPEN=18, valve CLOSE=19).
-#define TC_CS_PIN               15
-#define TC_SDI_PIN              13   // MOSI: ESP32 -> MAX31856
-#define TC_SDO_PIN              27   // MISO: MAX31856 -> ESP32
-#define TC_SCK_PIN              14
+// UPDATED TO MATCH YOUR HARDWARE LOGS (17, 21, 22, 23)
+#define TC_CS_PIN               17
+#define TC_SDI_PIN              21   // MOSI: ESP32 -> MAX31856
+#define TC_SDO_PIN              22   // MISO: MAX31856 -> ESP32
+#define TC_SCK_PIN              23
 
-// On boot we re-home by driving CLOSE for closeTimeMs * this multiplier; the
-// extra time is harmless because the valve's internal limit switch cuts the
-// motor when it reaches the closed stop. 1.2 = 20% safety margin.
 #define VALVE_HOMING_OVERSHOOT  1.2f
-
-// Direction-reversal dwell — both outputs LOW for this long when reversing.
 #define VALVE_REVERSE_DWELL_MS  150UL
-
-// Deadband — stop within this many % of target.
 #define VALVE_DEADBAND_PCT      1.0f
 
 // ====== TIMING ======
 const unsigned long CONTROL_PERIOD_MS  = 250;   // PID/stage update
 const unsigned long STATUS_PERIOD_MS   = 650;   // session sampling
-const unsigned long PWM_WINDOW_MS      = 5000;  // SSR slow-PWM window (zero-cross relay)
-const unsigned long BLE_TIMEOUT_MS     = 30000; // ESTOP after this without a BLE reading
+const unsigned long PWM_WINDOW_MS      = 5000;  // SSR slow-PWM window
+const unsigned long BLE_TIMEOUT_MS     = 30000; // ESTOP after this without a probe reading
 const unsigned long PERSIST_RUN_MS     = 30000; // save run metadata every 30s
-const unsigned long MAX_RUN_MS         = 24UL * 60UL * 60UL * 1000UL; // 24h hard ceiling
+const unsigned long MAX_RUN_MS         = 24UL * 60UL * 60UL * 1000UL;
 
 // ====== SAFETY ======
 const float  HARD_MAX_TEMP_C   = 105.0;
 const float  HARD_MIN_TEMP_C   = -10.0;
 const size_t MAX_SESSION_PTS   = 500;
 
-// ====== DEFAULT WIFI (fallback if NVS empty) ======
+// ====== DEFAULT WIFI ======
 extern const char* WIFI_SSID_DEFAULT;
 extern const char* WIFI_PASS_DEFAULT;
 
