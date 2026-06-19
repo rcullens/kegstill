@@ -1,6 +1,6 @@
 /*
   KEG STILL - GLITCH EDITION - SPLIT BUILD
-  EXORCIST PATCH v3.0
+  STABILITY PATCH v3.1
 */
 
 #include <Arduino.h>
@@ -94,10 +94,10 @@ static bool connectWiFi() {
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(false); 
 
-  // MINIMAL POWER (10dBm) TO STOP BROWNOUT DURING BOOT
-  WiFi.setTxPower(WIFI_POWER_10dBm);
+  // FIX: Using standard WIFI_POWER_11dBm (10dBm doesn't exist in some cores)
+  WiFi.setTxPower(WIFI_POWER_11dBm);
 
-  Serial.printf("[WiFi] connecting to '%s' (TX: 10dBm)...", ssid.c_str()); Serial.flush();
+  Serial.printf("[WiFi] connecting to '%s' (TX: 11dBm)...", ssid.c_str()); Serial.flush();
   WiFi.begin(ssid.c_str(), pass.c_str());
   
   unsigned long t0 = millis();
@@ -109,12 +109,11 @@ static bool connectWiFi() {
 }
 
 void setup() {
-  // DISABLE WIFI IMMEDIATELY ON BOOT TO SAVE POWER
   WiFi.mode(WIFI_OFF);
   
   Serial.begin(115200);
   delay(3000); 
-  Serial.println("\n[BOOT] Keg Still GLITCH (EXORCIST PATCH v3.0)");
+  Serial.println("\n[BOOT] Keg Still GLITCH (v3.1 - Compiler Fix)");
   Serial.printf("[BOOT] Reset CPU0: %d, CPU1: %d\n", rtc_get_reset_reason(0), rtc_get_reset_reason(1));
   Serial.flush();
 
