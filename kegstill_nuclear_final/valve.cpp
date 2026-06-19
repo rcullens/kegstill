@@ -12,8 +12,8 @@ static uint8_t  s_target         = 0;
 static uint32_t s_lastTick       = 0;
 static uint32_t s_moveStart      = 0;
 static uint32_t s_moveDuration   = 0;        
-static uint32_t s_openTimeMs     = 10000;    
-static uint32_t s_closeTimeMs    = 10000;
+static unsigned long s_openTimeMs     = 10000;    
+static unsigned long s_closeTimeMs    = 10000;
 static bool     s_calibrated     = false;
 static String   s_faultReason    = "";
 
@@ -40,7 +40,6 @@ void valve::begin() {
   Serial.printf("[VALVE] init calibrated=%d open=%lums close=%lums\n",
                 s_calibrated, (unsigned long)s_openTimeMs, (unsigned long)s_closeTimeMs);
 
-  // GOD MODE PATCH: DISABLE AUTO-HOMING ON BOOT TO PREVENT BROWNOUT
   s_position = 0; 
   s_state    = ST_IDLE;
   Serial.println("[VALVE] Boot-homing DISABLED for power stability. Home manually via UI.");
@@ -57,7 +56,7 @@ void valve::setPosition(uint8_t pct) {
   float delta = (float)pct - s_position;
   if (fabsf(delta) < VALVE_DEADBAND_PCT) { driveStop(); s_state = ST_IDLE; return; }
 
-  uint32_t travelMs = (delta > 0) ? s_openTimeMs : s_closeTimeMs;
+  unsigned long travelMs = (delta > 0) ? s_openTimeMs : s_closeTimeMs;
   s_moveDuration    = (uint32_t)(fabsf(delta) * (float)travelMs / 100.0f);
   if (pct == 0)   s_moveDuration = (uint32_t)((float)s_closeTimeMs * VALVE_HOMING_OVERSHOOT);
   if (pct == 100) s_moveDuration = (uint32_t)((float)s_openTimeMs  * VALVE_HOMING_OVERSHOOT);
@@ -65,6 +64,16 @@ void valve::setPosition(uint8_t pct) {
   s_moveStart = millis();
   if (delta > 0) { s_state = ST_OPENING; driveOpen(); }
   else           { s_state = ST_CLOSING; driveClose(); }
+}
+
+void valve::setCalibration(unsigned long openMs, unsigned long closeMs) {
+  if (openMs  < 500 || openMs  > 120000) return; 
+  if (closeMs < 500 || closeMs > 120000) return;
+  s_openTimeMs  = openMs;
+  s_closeTimeMs = closeMs;
+  s_calibrated  = true;
+  storage::saveValveCalib(s_openTimeMs, s_closeTimeMs, true);
+  Serial.printf("[VALVE] CAL set: open=%lums close=%lums\n", openMs, closeMs);
 }
 
 void valve::rehome() {
